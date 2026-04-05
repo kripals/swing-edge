@@ -1,0 +1,35 @@
+# Web framework
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+
+# Database
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+
+# Config
+pydantic-settings==2.6.1
+
+# HTTP client (async)
+httpx==0.28.1
+
+# Auth
+python-jose[cryptography]==3.3.0
+bcrypt==4.2.1
+
+# Rate limiting
+slowapi==0.1.9
+
+# Data processing (Phase 2 — technical analysis; add back when implementing scanner)
+# pandas-ta requires pandas>=2.3.2 and numpy>=2.2.6 — pin all three together when needed
+pandas==2.2.3
+
+# Notifications (Phase 4)
+python-telegram-bot==21.9
+pywebpush==2.0.1
+
+# SnapTrade
+snaptrade-python-sdk==11.0.72
+
+# Encryption (SnapTrade user secret)
+cryptography>=42.0.5,<43.0.0
