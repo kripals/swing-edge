@@ -20,7 +20,8 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const isLoginEndpoint = error.config?.url?.includes('/auth/login')
+    if (error.response?.status === 401 && !isLoginEndpoint) {
       localStorage.removeItem('swingdge_token')
       window.location.href = '/login'
     }
@@ -52,16 +53,27 @@ export const marketApi = {
 
 // ── Scanner (Phase 2) ─────────────────────────────────────────────────────────
 export const scannerApi = {
-  runScan: () => api.get('/scanner/run'),
-  getResults: () => api.get('/scanner/results'),
+  runScan: () => api.post('/scanner/run'),
+  getResults: (date) => api.get('/scanner/results', { params: date ? { scan_date: date } : {} }),
+  getHistory: () => api.get('/scanner/history'),
 }
 
 // ── Trade Plans (Phase 2) ─────────────────────────────────────────────────────
 export const tradesApi = {
-  getPlans: () => api.get('/trades/plans'),
+  getPlans: (status) => api.get('/trades/plans', { params: status ? { status } : {} }),
+  getPlan: (id) => api.get(`/trades/plans/${id}`),
+  generatePlan: (ticker, params) => api.get(`/trades/plans/generate/${ticker}`, { params }),
   createPlan: (data) => api.post('/trades/plans', data),
-  updatePlan: (id, data) => api.patch(`/trades/plans/${id}`, data),
+  updateStatus: (id, data) => api.patch(`/trades/plans/${id}/status`, data),
+  updateNotes: (id, notes) => api.patch(`/trades/plans/${id}`, { notes }),
+  cancelPlan: (id) => api.delete(`/trades/plans/${id}`),
   getHistory: () => api.get('/trades/history'),
+}
+
+// ── Settings (Phase 2) ───────────────────────────────────────────────────────
+export const settingsApi = {
+  getRules: () => api.get('/settings/rules'),
+  updateRule: (key, value) => api.patch(`/settings/rules/${key}`, { rule_value: String(value) }),
 }
 
 // ── Alerts (Phase 4) ──────────────────────────────────────────────────────────

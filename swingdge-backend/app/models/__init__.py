@@ -8,6 +8,7 @@ from app.models.alert import Alert
 from app.models.cache import ApiCache
 from app.models.trading_rule import TradingRule
 from app.models.ticker import Ticker
+from app.models.scan_result import ScanResult
 
 __all__ = [
     "Account",
@@ -21,4 +22,5 @@ __all__ = [
     "ApiCache",
     "TradingRule",
     "Ticker",
+    "ScanResult",
 ]

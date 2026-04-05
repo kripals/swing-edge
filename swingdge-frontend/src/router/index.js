@@ -26,6 +26,12 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
+    path: '/plan',
+    name: 'TradePlanGenerate',
+    component: () => import('../views/TradePlan.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/trades/:id',
     name: 'TradePlan',
     component: () => import('../views/TradePlan.vue'),

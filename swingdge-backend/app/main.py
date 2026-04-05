@@ -8,7 +8,8 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from app.config import get_settings
-from app.api import auth, portfolio, triggers
+from app.api import auth, portfolio, triggers, scanner, trades
+from app.api import settings as settings_api
 
 settings = get_settings()
 
@@ -47,7 +48,7 @@ app.add_middleware(
     allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["*"],
 )
 
 # 2. Request ID middleware — adds X-Request-ID header for tracing
@@ -77,6 +78,9 @@ async def cold_start_header(request: Request, call_next):
 app.include_router(auth.router)
 app.include_router(portfolio.router)
 app.include_router(triggers.router)
+app.include_router(scanner.router)
+app.include_router(trades.router)
+app.include_router(settings_api.router)
 
 
 # ── Health check (no auth — used by Render + GitHub Actions) ─────────────────

@@ -8,15 +8,15 @@
 ## Phase 1 — Foundation
 
 ### Infrastructure Setup (do first — unblocks everything)
-- [ ] Create Supabase free project → copy `DATABASE_URL`
-- [ ] Sign up for Twelve Data API key (800 req/day free)
-- [ ] Sign up for Alpha Vantage API key (25 req/day free)
-- [ ] Sign up for Finnhub API key (60 req/min free)
-- [ ] Sign up for Financial Modeling Prep (FMP) API key (250 req/day free)
-- [ ] Sign up for Marketaux API key (100 req/day free)
-- [ ] Sign up for SnapTrade free tier → register app → get client ID + consumer key
+- [x] Create Supabase free project → copy `DATABASE_URL`
+- [x] Sign up for Twelve Data API key (800 req/day free)
+- [x] Sign up for Alpha Vantage API key (25 req/day free)
+- [x] Sign up for Finnhub API key (60 req/min free)
+- [x] Sign up for Financial Modeling Prep (FMP) API key (250 req/day free)
+- [x] Sign up for Marketaux API key (100 req/day free)
+- [x] Sign up for SnapTrade free tier → register app → get client ID + consumer key
 - [ ] Connect Wealthsimple accounts to SnapTrade (Kripal TFSA + Sushma TFSA)
-- [ ] Create Telegram bot via @BotFather → save bot token + chat ID
+- [x] Create Telegram bot via @BotFather → save bot token + chat ID
 
 ### Backend — FastAPI Project
 - [x] Initialize FastAPI project structure (`swingdge-backend/`)
@@ -27,7 +27,7 @@
 - [ ] Deploy FastAPI to Render free tier (connect Git repo, add env vars)
 
 ### Database — Supabase
-- [x] Write and run migrations for all core tables:
+- [x] Write and run migrations for all core tables: ✓ ran via alembic
   - [x] `accounts`
   - [x] `holdings`
   - [x] `watchlist`
@@ -63,30 +63,37 @@
 
 ---
 
-## Phase 2 — Analysis Engine
+## Phase 2 — Analysis Engine ✓
 
 ### Backend
-- [ ] Implement technical indicator calculations (EMA 9/21, SMA 50/200, RSI, MACD, Bollinger Bands, ATR, VWAP, volume ratio, relative strength)
-- [ ] Build trading rules engine (reads rules from `trading_rules` table)
-- [ ] Build scanner engine with all filter criteria (uptrend, pullback, momentum, volume, ATR, market cap, earnings-safe, not overextended)
-- [ ] Build scanner signal scoring system
-- [ ] Build trade plan generator (entry zone, stop, targets, position sizing)
-- [ ] Implement FX cost calculator (Wealthsimple 1.5% each way)
-- [ ] Implement earnings date checker + 5-day blackout enforcement
-- [ ] Build scanner API endpoints:
-  - [ ] `GET /api/scanner/run`
-  - [ ] `GET /api/scanner/results`
-  - [ ] `GET /api/scanner/history`
-- [ ] Build trade plan API endpoints:
-  - [ ] `GET /api/trades/plans`
-  - [ ] `POST /api/trades/plans`
-  - [ ] `PATCH /api/trades/plans/:id`
-  - [ ] `GET /api/trades/history`
+- [x] Implement technical indicator calculations (EMA 9/21, SMA 50/200, RSI, MACD, Bollinger Bands, ATR via Twelve Data; VWAP, volume ratio, relative strength computed locally)
+- [x] Build trading rules engine (reads rules from `trading_rules` table, 5-min in-memory cache)
+- [x] Build scanner engine with all filter criteria (uptrend, pullback, momentum, volume, ATR, market cap, earnings-safe, not overextended)
+- [x] Build scanner signal scoring system (6 signal types, 9-component score, 0.4 threshold)
+- [x] Build trade plan generator (entry zone, ATR stop, T1/T2 targets, position sizing)
+- [x] Implement FX cost calculator (Wealthsimple 1.5% each way)
+- [x] Implement earnings date checker + 5-day blackout enforcement (FMP → Finnhub fallback)
+- [x] Build scanner API endpoints:
+  - [x] `POST /api/scanner/run`
+  - [x] `GET /api/scanner/results`
+  - [x] `GET /api/scanner/history`
+- [x] Build trade plan API endpoints:
+  - [x] `GET /api/trades/plans`
+  - [x] `POST /api/trades/plans`
+  - [x] `GET /api/trades/plans/:id`
+  - [x] `GET /api/trades/plans/generate/:ticker`
+  - [x] `PATCH /api/trades/plans/:id/status`
+  - [x] `PATCH /api/trades/plans/:id` (notes)
+  - [x] `DELETE /api/trades/plans/:id` (soft delete)
+  - [x] `GET /api/trades/history`
+- [x] Build settings API endpoints:
+  - [x] `GET /api/settings/rules`
+  - [x] `PATCH /api/settings/rules/:key`
 
 ### Frontend
-- [ ] Build Scanner view (candidates list, signal type, R/R ratio, filters)
-- [ ] Build Trade Plan detail view (entry/stop/targets, mini chart, fundamentals)
-- [ ] Build Settings view (editable trading rules)
+- [x] Build Scanner view (candidates list, signal type filter chips, history, run scan button)
+- [x] Build Trade Plan detail view (SVG price ladder, violations, FX/earnings warnings, status controls)
+- [x] Build Settings view (grouped editable rules, inline save, locked rules read-only)
 
 ---
 
