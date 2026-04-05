@@ -94,6 +94,7 @@
 - [x] Build Scanner view (candidates list, signal type filter chips, history, run scan button)
 - [x] Build Trade Plan detail view (SVG price ladder, violations, FX/earnings warnings, status controls)
 - [x] Build Settings view (grouped editable rules, inline save, locked rules read-only)
+- [x] Build Trade History view (win/loss stats strip, filter chips by status, trade rows with P&L)
 
 ---
 

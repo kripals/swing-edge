@@ -1,11 +1,337 @@
 <template>
-  <div class="stub-page card">
-    <h2>Coming in Phase 2</h2>
-    <p class="sub">This view will be built in the next phase.</p>
+  <div class="history">
+    <div class="page-header">
+      <h1 class="page-title">Trade History</h1>
+      <p class="page-sub">Closed, stopped, expired and cancelled trade plans.</p>
+    </div>
+
+    <!-- Loading -->
+    <div v-if="loading" class="loading-state">
+      <div class="spinner"></div>
+    </div>
+
+    <!-- Error -->
+    <div v-else-if="error" class="error-card card">
+      <p class="negative">{{ error }}</p>
+      <button class="retry-btn" @click="load">Retry</button>
+    </div>
+
+    <template v-else-if="trades.length === 0">
+      <div class="empty-state card">
+        <p>No closed trades yet.</p>
+        <p class="sub">Trades appear here once they are closed, stopped, expired or cancelled.</p>
+      </div>
+    </template>
+
+    <template v-else>
+      <!-- Summary strip -->
+      <div class="summary-strip card">
+        <div class="stat">
+          <div class="stat-val">{{ stats.total }}</div>
+          <div class="stat-label">Total</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val positive">{{ stats.wins }}</div>
+          <div class="stat-label">Wins</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val negative">{{ stats.losses }}</div>
+          <div class="stat-label">Losses</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val" :class="stats.winRate >= 50 ? 'positive' : 'negative'">
+            {{ stats.winRate }}%
+          </div>
+          <div class="stat-label">Win Rate</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val" :class="stats.totalPnl >= 0 ? 'positive' : 'negative'">
+            {{ stats.totalPnl >= 0 ? '+' : '' }}${{ stats.totalPnl.toFixed(2) }}
+          </div>
+          <div class="stat-label">Total P&amp;L</div>
+        </div>
+      </div>
+
+      <!-- Filter chips -->
+      <div class="filter-row">
+        <button
+          v-for="f in filters"
+          :key="f.value"
+          class="chip"
+          :class="{ active: activeFilter === f.value }"
+          @click="activeFilter = f.value"
+        >
+          {{ f.label }}
+          <span class="chip-count">{{ f.count }}</span>
+        </button>
+      </div>
+
+      <!-- Trade rows -->
+      <div class="trade-list card">
+        <div
+          v-for="t in filtered"
+          :key="t.id"
+          class="trade-row"
+          @click="$router.push(`/trades/${t.id}`)"
+        >
+          <!-- Left: ticker + meta -->
+          <div class="trade-left">
+            <div class="trade-top">
+              <span class="ticker">{{ t.ticker }}</span>
+              <span class="badge exchange">{{ t.exchange }}</span>
+              <span v-if="t.sector" class="badge sector">{{ t.sector }}</span>
+              <span v-if="t.signal_type" class="badge signal" :class="signalClass(t.signal_type)">
+                {{ formatSignal(t.signal_type) }}
+              </span>
+            </div>
+            <div class="trade-dates">
+              <span>Opened {{ formatDate(t.created_at) }}</span>
+              <span v-if="t.closed_at"> · Closed {{ formatDate(t.closed_at) }}</span>
+            </div>
+          </div>
+
+          <!-- Middle: price journey -->
+          <div class="trade-prices">
+            <div class="price-col">
+              <div class="price-label">Entry mid</div>
+              <div class="price-val">${{ entryMid(t).toFixed(2) }}</div>
+            </div>
+            <div class="price-arrow">→</div>
+            <div class="price-col">
+              <div class="price-label">{{ t.closed_price ? 'Exit' : 'T2 target' }}</div>
+              <div class="price-val">
+                ${{ (t.closed_price ?? t.target_2).toFixed(2) }}
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: P&L + status -->
+          <div class="trade-right">
+            <div
+              v-if="t.actual_pnl != null"
+              class="pnl"
+              :class="t.actual_pnl >= 0 ? 'positive' : 'negative'"
+            >
+              {{ t.actual_pnl >= 0 ? '+' : '' }}${{ t.actual_pnl.toFixed(2) }}
+            </div>
+            <div v-else class="pnl muted">—</div>
+            <span class="status-badge" :class="statusClass(t.status)">
+              {{ formatStatus(t.status) }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </template>
   </div>
 </template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { tradesApi } from '../services/api'
+
+const trades = ref([])
+const loading = ref(false)
+const error = ref(null)
+const activeFilter = ref('all')
+
+async function load() {
+  loading.value = true
+  error.value = null
+  try {
+    const res = await tradesApi.getHistory()
+    trades.value = res.data
+  } catch (e) {
+    error.value = e.response?.data?.detail || 'Failed to load history'
+  } finally {
+    loading.value = false
+  }
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+
+const stats = computed(() => {
+  const closed = trades.value.filter((t) => t.actual_pnl != null)
+  const wins = closed.filter((t) => t.actual_pnl > 0).length
+  const losses = closed.filter((t) => t.actual_pnl <= 0).length
+  const totalPnl = closed.reduce((sum, t) => sum + t.actual_pnl, 0)
+  const winRate = closed.length > 0 ? Math.round((wins / closed.length) * 100) : 0
+  return { total: trades.value.length, wins, losses, winRate, totalPnl }
+})
+
+// ── Filters ───────────────────────────────────────────────────────────────────
+
+const filters = computed(() => [
+  { label: 'All',       value: 'all',       count: trades.value.length },
+  { label: 'Won',       value: 'hit_t2',    count: trades.value.filter((t) => t.status === 'hit_t2').length },
+  { label: 'Stopped',   value: 'stopped',   count: trades.value.filter((t) => t.status === 'stopped').length },
+  { label: 'Expired',   value: 'expired',   count: trades.value.filter((t) => t.status === 'expired').length },
+  { label: 'Cancelled', value: 'cancelled', count: trades.value.filter((t) => t.status === 'cancelled').length },
+].filter((f) => f.value === 'all' || f.count > 0))
+
+const filtered = computed(() =>
+  activeFilter.value === 'all'
+    ? trades.value
+    : trades.value.filter((t) => t.status === activeFilter.value)
+)
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function entryMid(t) {
+  return (t.entry_low + t.entry_high) / 2
+}
+
+function formatDate(iso) {
+  if (!iso) return ''
+  return new Date(iso).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function formatSignal(s) {
+  const map = {
+    RSI_PULLBACK: 'RSI Pullback',
+    RSI_REVERSAL: 'RSI Reversal',
+    MACD_CROSSOVER: 'MACD Cross',
+    EMA_CROSSOVER: 'EMA Cross',
+    BB_BOUNCE: 'BB Bounce',
+    VOLUME_BREAKOUT: 'Vol Break',
+    COMBO: 'COMBO',
+  }
+  return map[s] || s
+}
+
+function formatStatus(s) {
+  const map = {
+    hit_t2: 'Hit T2',
+    hit_t1: 'Hit T1',
+    stopped: 'Stopped',
+    expired: 'Expired',
+    cancelled: 'Cancelled',
+  }
+  return map[s] || s
+}
+
+function statusClass(s) {
+  if (s === 'hit_t2' || s === 'hit_t1') return 'win'
+  if (s === 'stopped') return 'loss'
+  if (s === 'expired' || s === 'cancelled') return 'neutral'
+  return ''
+}
+
+function signalClass(s) {
+  const map = {
+    RSI_PULLBACK: 'sig-rsi-pull',
+    RSI_REVERSAL: 'sig-rsi-rev',
+    MACD_CROSSOVER: 'sig-macd',
+    EMA_CROSSOVER: 'sig-ema',
+    BB_BOUNCE: 'sig-bb',
+    VOLUME_BREAKOUT: 'sig-vol',
+    COMBO: 'sig-combo',
+  }
+  return map[s] || ''
+}
+
+onMounted(load)
+</script>
+
 <style scoped>
-.stub-page { max-width: 600px; margin: 40px auto; text-align: center; }
-h2 { font-size: 20px; margin-bottom: 8px; }
-.sub { color: var(--text-muted); }
+.history { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+
+.page-header {}
+.page-title { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+.page-sub { font-size: 13px; color: var(--text-muted); }
+
+/* Loading / error / empty */
+.loading-state { text-align: center; padding: 40px 16px; }
+.error-card, .empty-state { text-align: center; padding: 32px 16px; }
+.empty-state .sub { font-size: 13px; color: var(--text-muted); margin-top: 6px; }
+.retry-btn { margin-top: 12px; background: var(--border); color: var(--text); border: none; padding: 6px 16px; border-radius: 6px; cursor: pointer; }
+
+/* Summary strip */
+.summary-strip {
+  display: flex;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+.stat {
+  flex: 1;
+  text-align: center;
+  padding: 14px 8px;
+  border-right: 1px solid var(--border);
+}
+.stat:last-child { border-right: none; }
+.stat-val { font-size: 20px; font-weight: 700; }
+.stat-label { font-size: 11px; color: var(--text-muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* Filter chips */
+.filter-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text-muted); padding: 5px 12px; border-radius: 20px;
+  font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s;
+}
+.chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chip-count { font-size: 11px; opacity: 0.7; }
+
+/* Trade list */
+.trade-list { display: flex; flex-direction: column; gap: 0; padding: 0; overflow: hidden; }
+
+.trade-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.trade-row:last-child { border-bottom: none; }
+.trade-row:hover { background: var(--surface); }
+
+/* Left */
+.trade-left { flex: 1; min-width: 0; }
+.trade-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+.ticker { font-size: 15px; font-weight: 700; }
+.trade-dates { font-size: 11px; color: var(--text-muted); }
+
+/* Middle */
+.trade-prices { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.price-col { text-align: center; }
+.price-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.price-val { font-size: 13px; font-weight: 600; margin-top: 2px; }
+.price-arrow { color: var(--text-muted); font-size: 12px; }
+
+/* Right */
+.trade-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+.pnl { font-size: 16px; font-weight: 700; }
+.pnl.muted { color: var(--text-muted); }
+
+/* Badges */
+.badge {
+  font-size: 10px; font-weight: 600; padding: 2px 6px;
+  border-radius: 4px; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.badge.exchange { background: color-mix(in srgb, var(--text-muted) 15%, transparent); color: var(--text-muted); }
+.badge.sector   { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+
+.status-badge {
+  font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 4px;
+}
+.status-badge.win     { background: color-mix(in srgb, var(--green) 20%, transparent); color: var(--green); }
+.status-badge.loss    { background: color-mix(in srgb, var(--red) 20%, transparent); color: var(--red); }
+.status-badge.neutral { background: color-mix(in srgb, var(--text-muted) 15%, transparent); color: var(--text-muted); }
+
+/* Signal colors */
+.badge.signal { }
+.sig-rsi-pull  { background: color-mix(in srgb, #3b82f6 20%, transparent); color: #3b82f6; }
+.sig-rsi-rev   { background: color-mix(in srgb, #8b5cf6 20%, transparent); color: #8b5cf6; }
+.sig-macd      { background: color-mix(in srgb, #06b6d4 20%, transparent); color: #06b6d4; }
+.sig-ema       { background: color-mix(in srgb, #f59e0b 20%, transparent); color: #f59e0b; }
+.sig-bb        { background: color-mix(in srgb, #ec4899 20%, transparent); color: #ec4899; }
+.sig-vol       { background: color-mix(in srgb, #10b981 20%, transparent); color: #10b981; }
+.sig-combo     { background: color-mix(in srgb, #f97316 20%, transparent); color: #f97316; }
+
+/* Shared */
+.positive { color: var(--green); }
+.negative { color: var(--red); }
 </style>
