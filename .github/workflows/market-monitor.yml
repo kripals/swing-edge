@@ -78,6 +78,7 @@ jobs:
             [ "$STATUS" = "200" ] && break
             sleep 20
           done
+          true
 
       - name: Trigger morning-scan
         run: |
