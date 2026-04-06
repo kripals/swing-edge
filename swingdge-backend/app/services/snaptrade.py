@@ -82,9 +82,11 @@ async def _get(path: str, extra_params: dict | None = None) -> Any:
 
 
 async def _post(path: str, body: dict) -> Any:
-    headers = _auth_headers(path)
+    import json as _json
+    body_str = _json.dumps(body, separators=(",", ":"))
+    headers = _auth_headers(path, body_str)
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        resp = await client.post(f"{_BASE}{path}", json=body, headers=headers)
+        resp = await client.post(f"{_BASE}{path}", content=body_str, headers=headers)
         resp.raise_for_status()
         return resp.json()
 
@@ -98,7 +100,6 @@ async def register_user() -> dict:
     """
     body = {
         "userId": settings.snaptrade_user_id or str(uuid.uuid4()),
-        "rsaPublicKey": "",  # Optional — skip for simple setup
     }
     return await _post("/snapTrade/registerUser", body)
 
