@@ -1,33 +1,19 @@
 """
 SnapTrade client — read-only portfolio sync with Wealthsimple.
 
-SnapTrade acts as a broker aggregator. We use it to:
-  1. Connect Wealthsimple accounts (OAuth flow — done once in Settings)
-  2. Fetch account balances
-  3. Fetch current positions (holdings)
+Uses the official snaptrade-python-sdk which handles HMAC-SHA256 signing.
 
-We do NOT use SnapTrade for trading — read-only only.
-
-Free tier: 5 broker connections (enough for Kripal TFSA + Sushma TFSA).
-
-Setup flow (manual, done once):
-  1. Register user with SnapTrade (POST /snapTrade/registerUser)
-  2. Get connection link (POST /snapTrade/login) → redirect user to Wealthsimple OAuth
-  3. User logs in and grants access
-  4. SnapTrade returns brokerage_authorization_id — store in accounts.snaptrade_account_id
-  5. From then on, call /holdings and /balances to sync
-
-NOTE: snaptrade-python-sdk handles request signing (HMAC-SHA256).
+Setup flow (done once):
+  1. POST /api/snaptrade/register → get userId + userSecret
+  2. Add both to Render env vars and redeploy
+  3. GET /api/snaptrade/connect → get OAuth URL
+  4. Open URL in browser → log into Wealthsimple → grant access
+  5. portfolio-sync trigger pulls holdings/balances automatically
 """
 from __future__ import annotations
 
-import hashlib
-import hmac
-import time
 import uuid
-from typing import Any
 
-import httpx
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,110 +21,74 @@ from app.config import get_settings
 
 settings = get_settings()
 
-_BASE = "https://api.snaptrade.com/api/v1"
-_TIMEOUT = 20.0
 
-
-# ── Request signing ───────────────────────────────────────────────────────────
-
-def _sign_request(path: str, timestamp: str, query_params: str = "") -> str:
-    """HMAC-SHA256 signature required by SnapTrade for all requests."""
-    message = f"{timestamp}{path}{query_params}"
-    return hmac.new(
-        settings.snaptrade_consumer_key.encode(),
-        message.encode(),
-        hashlib.sha256,
-    ).hexdigest()
-
-
-def _auth_headers(path: str, query_params: str = "") -> dict[str, str]:
-    timestamp = str(int(time.time() * 1000))
-    signature = _sign_request(path, timestamp, query_params)
-    return {
-        "clientId": settings.snaptrade_client_id,
-        "timestamp": timestamp,
-        "signature": signature,
-        "Content-Type": "application/json",
-    }
-
-
-def _user_params() -> dict[str, str]:
-    return {
-        "userId": settings.snaptrade_user_id,
-        "userSecret": settings.snaptrade_user_secret_encrypted,
-    }
-
-
-async def _get(path: str, extra_params: dict | None = None) -> Any:
-    params = _user_params()
-    if extra_params:
-        params.update(extra_params)
-    query_string = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
-    headers = _auth_headers(path, query_string)
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        resp = await client.get(f"{_BASE}{path}", params=params, headers=headers)
-        resp.raise_for_status()
-        return resp.json()
-
-
-async def _post(path: str, body: dict) -> Any:
-    import json as _json
-    body_str = _json.dumps(body, separators=(",", ":"))
-    headers = _auth_headers(path, body_str)
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        resp = await client.post(f"{_BASE}{path}", content=body_str, headers=headers)
-        resp.raise_for_status()
-        return resp.json()
+def _client():
+    from snaptrade_client import SnapTrade
+    return SnapTrade(
+        consumer_key=settings.snaptrade_consumer_key,
+        client_id=settings.snaptrade_client_id,
+    )
 
 
 # ── Registration (run once during setup) ─────────────────────────────────────
 
 async def register_user() -> dict:
     """
-    Register Kripal as a SnapTrade user. Run once during initial setup.
-    Stores userId + userSecret — keep userSecret encrypted in DB.
+    Register as a SnapTrade user. Run once during initial setup.
+    Returns userId and userSecret — save both to Render env vars.
     """
-    body = {
-        "userId": settings.snaptrade_user_id or str(uuid.uuid4()),
-    }
-    return await _post("/snapTrade/registerUser", body)
+    st = _client()
+    user_id = settings.snaptrade_user_id or str(uuid.uuid4())
+    response = st.authentication.register_snap_trade_user(body={"userId": user_id})
+    return response.body
 
 
 async def get_connection_link(redirect_uri: str) -> str:
     """
-    Get the OAuth URL to send the user to Wealthsimple for account linking.
-    Returns the redirect URL string.
+    Get the Wealthsimple OAuth URL. Open in browser to link the account.
     """
-    body = {
-        "userId": settings.snaptrade_user_id,
-        "userSecret": settings.snaptrade_user_secret_encrypted,
-        "broker": "WEALTHSIMPLE",
-        "immediateRedirect": True,
-        "customRedirect": redirect_uri,
-    }
-    data = await _post("/snapTrade/login", body)
-    return data.get("redirectURI", "")
+    st = _client()
+    response = st.authentication.login_snap_trade_user(
+        query_params={
+            "userId": settings.snaptrade_user_id,
+            "userSecret": settings.snaptrade_user_secret_encrypted,
+        },
+        body={
+            "broker": "WEALTHSIMPLE",
+            "immediateRedirect": True,
+            "customRedirect": redirect_uri,
+        },
+    )
+    return response.body.get("redirectURI", "")
 
 
-# ── Portfolio Sync ────────────────────────────────────────────────────────────
+# ── Portfolio data ────────────────────────────────────────────────────────────
 
 async def get_accounts() -> list[dict]:
-    """
-    Returns all linked brokerage accounts with balances.
-    [{id, name, number, institution_name, balance: {total: {amount, currency}}}]
-    """
-    data = await _get("/accounts")
+    """Returns all linked brokerage accounts."""
+    st = _client()
+    response = st.account_information.list_user_accounts(
+        query_params={
+            "userId": settings.snaptrade_user_id,
+            "userSecret": settings.snaptrade_user_secret_encrypted,
+        }
+    )
+    data = response.body
     if not isinstance(data, list):
         return []
     return data
 
 
 async def get_all_positions() -> list[dict]:
-    """
-    Returns all positions across all linked accounts.
-    [{account_id, symbol, units, price, open_pnl, ...}]
-    """
-    data = await _get("/holdings")
+    """Returns all positions across all linked accounts."""
+    st = _client()
+    response = st.account_information.get_all_user_holdings(
+        query_params={
+            "userId": settings.snaptrade_user_id,
+            "userSecret": settings.snaptrade_user_secret_encrypted,
+        }
+    )
+    data = response.body
     if not isinstance(data, list):
         return []
 
@@ -161,10 +111,15 @@ async def get_all_positions() -> list[dict]:
 
 
 async def get_balances() -> dict[str, float]:
-    """
-    Returns {snaptrade_account_id: total_balance_cad} for all accounts.
-    """
-    data = await _get("/accounts/balances")
+    """Returns {snaptrade_account_id: total_balance_cad} for all accounts."""
+    st = _client()
+    response = st.account_information.get_user_account_balance(
+        query_params={
+            "userId": settings.snaptrade_user_id,
+            "userSecret": settings.snaptrade_user_secret_encrypted,
+        }
+    )
+    data = response.body
     balances: dict[str, float] = {}
     if not isinstance(data, list):
         return balances
@@ -181,13 +136,11 @@ async def get_balances() -> dict[str, float]:
 
 async def sync_portfolio(db: AsyncSession) -> dict[str, int]:
     """
-    Full portfolio sync: fetch from SnapTrade, upsert into our holdings + accounts tables.
-    Returns {accounts_updated, positions_updated}.
+    Full portfolio sync: fetch from SnapTrade, upsert into holdings + accounts tables.
     """
     accounts_updated = 0
     positions_updated = 0
 
-    # Sync balances
     balances = await get_balances()
     for snaptrade_id, balance in balances.items():
         result = await db.execute(
@@ -201,10 +154,8 @@ async def sync_portfolio(db: AsyncSession) -> dict[str, int]:
         if result.rowcount:
             accounts_updated += 1
 
-    # Sync positions
     positions = await get_all_positions()
     for pos in positions:
-        # Find our account by SnapTrade ID
         result = await db.execute(
             text("SELECT id, has_usd_account FROM accounts WHERE snaptrade_account_id = :sid"),
             {"sid": pos["snaptrade_account_id"]},
