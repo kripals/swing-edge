@@ -54,7 +54,7 @@ async def get_connection_link(redirect_uri: str) -> str:
             "userSecret": settings.snaptrade_user_secret_encrypted,
         },
         body={
-            "broker": "WEALTHSIMPLE_TRADE",
+            "broker": "WEALTHSIMPLETRADE",
             "immediateRedirect": True,
             "customRedirect": redirect_uri,
         },
