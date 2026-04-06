@@ -96,12 +96,14 @@ async def get_all_positions() -> list[dict]:
     for account_data in data:
         account_id = account_data.get("account", {}).get("id")
         for pos in account_data.get("positions", []):
-            symbol_info = pos.get("symbol", {})
+            brokerage_symbol = pos.get("symbol", {})
+            symbol_info = brokerage_symbol.get("symbol", {}) if isinstance(brokerage_symbol.get("symbol"), dict) else brokerage_symbol
+            ticker_raw = symbol_info.get("symbol", "") if isinstance(symbol_info, dict) else ""
             positions.append({
                 "snaptrade_account_id": account_id,
-                "ticker": _clean_ticker(symbol_info.get("symbol", "")),
-                "exchange": symbol_info.get("exchange", {}).get("code", ""),
-                "currency": symbol_info.get("currency", {}).get("code", "CAD"),
+                "ticker": _clean_ticker(ticker_raw),
+                "exchange": symbol_info.get("exchange", {}).get("code", "") if isinstance(symbol_info, dict) else "",
+                "currency": symbol_info.get("currency", {}).get("code", "CAD") if isinstance(symbol_info, dict) else "CAD",
                 "shares": float(pos.get("units", 0) or 0),
                 "avg_cost": float(pos.get("average_purchase_price", 0) or 0),
                 "current_price": float(pos.get("price", 0) or 0),
