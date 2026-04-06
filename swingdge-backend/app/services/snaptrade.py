@@ -113,22 +113,31 @@ async def get_all_positions() -> list[dict]:
 async def get_balances() -> dict[str, float]:
     """Returns {snaptrade_account_id: total_balance_cad} for all accounts."""
     st = _client()
-    response = st.account_information.get_user_account_balance(
-        query_params={
-            "userId": settings.snaptrade_user_id,
-            "userSecret": settings.snaptrade_user_secret_encrypted,
-        }
-    )
-    data = response.body
+    user_params = {
+        "userId": settings.snaptrade_user_id,
+        "userSecret": settings.snaptrade_user_secret_encrypted,
+    }
+    # Get all accounts first, then fetch balance per account
+    accounts_resp = st.account_information.list_user_accounts(query_params=user_params)
+    accounts = accounts_resp.body if isinstance(accounts_resp.body, list) else []
+
     balances: dict[str, float] = {}
-    if not isinstance(data, list):
-        return balances
-    for item in data:
-        acc_id = item.get("account", {}).get("id")
-        total = item.get("total", {})
-        amount = float(total.get("amount", 0) or 0)
-        if acc_id:
-            balances[acc_id] = amount
+    for account in accounts:
+        acc_id = account.get("id")
+        if not acc_id:
+            continue
+        try:
+            bal_resp = st.account_information.get_user_account_balance(
+                path_params={"accountId": acc_id},
+                query_params=user_params,
+            )
+            for item in (bal_resp.body or []):
+                currency = item.get("currency", {}).get("code", "")
+                if currency == "CAD":
+                    balances[acc_id] = float(item.get("cash", 0) or 0)
+                    break
+        except Exception:
+            continue
     return balances
 
 
