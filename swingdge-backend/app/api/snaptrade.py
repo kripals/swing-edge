@@ -57,6 +57,23 @@ async def connection_callback():
     return {"message": "Wealthsimple connected successfully. You can close this tab."}
 
 
+@router.get("/positions")
+async def get_positions(_: str = Depends(verify_token)):
+    """
+    Returns all raw positions from SnapTrade grouped by snaptrade_account_id.
+    Use this to identify which account ID maps to which account.
+    """
+    try:
+        positions = await snaptrade_svc.get_all_positions()
+        grouped: dict = {}
+        for p in positions:
+            acc_id = p["snaptrade_account_id"]
+            grouped.setdefault(acc_id, []).append(p["ticker"])
+        return {"accounts": grouped, "total_positions": len(positions)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("/status")
 async def snaptrade_status(_: str = Depends(verify_token)):
     """
