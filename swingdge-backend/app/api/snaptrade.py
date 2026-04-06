@@ -6,7 +6,7 @@ After registration, save the returned userId + userSecret to Render env vars.
 """
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.utils.auth import require_auth
+from app.utils.auth import verify_token
 from app.services import snaptrade as snaptrade_svc
 from app.config import get_settings
 
@@ -15,7 +15,7 @@ settings = get_settings()
 
 
 @router.post("/register")
-async def register_user(_: str = Depends(require_auth)):
+async def register_user(_: str = Depends(verify_token)):
     """
     Register this app as a SnapTrade user. Run once during initial setup.
     Returns userId and userSecret — add both to Render environment variables.
@@ -32,7 +32,7 @@ async def register_user(_: str = Depends(require_auth)):
 
 
 @router.get("/connect")
-async def get_connect_link(_: str = Depends(require_auth)):
+async def get_connect_link(_: str = Depends(verify_token)):
     """
     Returns the Wealthsimple OAuth URL. Open this URL in a browser to link accounts.
     """
@@ -58,7 +58,7 @@ async def connection_callback():
 
 
 @router.get("/status")
-async def snaptrade_status(_: str = Depends(require_auth)):
+async def snaptrade_status(_: str = Depends(verify_token)):
     """
     Shows whether SnapTrade user is registered and has linked accounts.
     """
