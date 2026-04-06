@@ -14,9 +14,12 @@ Scheduled jobs:
 """
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, Header
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel
 from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,6 +53,7 @@ async def _run_timed(job_name: str, coro) -> TriggerResult:
         )
     except Exception as exc:
         duration = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
+        logger.exception("Job %s failed", job_name)
         return TriggerResult(
             job=job_name,
             status="error",
