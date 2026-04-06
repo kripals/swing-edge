@@ -36,7 +36,7 @@ async def get_connect_link(_: str = Depends(verify_token)):
     """
     Returns the Wealthsimple OAuth URL. Open this URL in a browser to link accounts.
     """
-    if not settings.snaptrade_user_id or settings.snaptrade_user_id == "your_registered_user_id":
+    if not settings.snaptrade_user_id:
         raise HTTPException(
             status_code=400,
             detail="SNAPTRADE_USER_ID not set. Call POST /api/snaptrade/register first.",
@@ -63,7 +63,7 @@ async def snaptrade_status(_: str = Depends(verify_token)):
     Shows whether SnapTrade user is registered and has linked accounts.
     """
     user_id = settings.snaptrade_user_id
-    is_registered = bool(user_id and user_id != "your_registered_user_id")
+    is_registered = bool(user_id)
 
     accounts = []
     if is_registered:
