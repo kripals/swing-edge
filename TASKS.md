@@ -24,7 +24,7 @@
 - [x] Set up FastAPI middleware stack (CORS, rate limiting, HTTPS redirect, request ID)
 - [x] Implement JWT auth (single-user — login endpoint, token verification)
 - [x] Build trigger endpoint skeleton with `TRIGGER_SECRET` auth (`POST /api/trigger/*`)
-- [ ] Deploy FastAPI to Render free tier (connect Git repo, add env vars)
+- [x] Deploy FastAPI to Render free tier (connect Git repo, add env vars)
 
 ### Database — Supabase
 - [x] Write and run migrations for all core tables: ✓ ran via alembic
