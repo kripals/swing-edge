@@ -41,6 +41,7 @@ export const portfolioApi = {
   getSummary: () => api.get('/portfolio/summary'),
   getHoldings: () => api.get('/portfolio/holdings'),
   getAccounts: () => api.get('/portfolio/accounts'),
+  getHealth: () => api.get('/portfolio/health'),
   addHolding: (data) => api.post('/portfolio/holdings', data),
 }
 
@@ -49,6 +50,7 @@ export const marketApi = {
   getQuote: (ticker) => api.get(`/market/quote/${ticker}`),
   getSectors: () => api.get('/market/sectors'),
   getMacro: () => api.get('/market/macro'),
+  getEarnings: (ticker) => api.get(`/market/earnings/${ticker}`),
 }
 
 // ── Scanner (Phase 2) ─────────────────────────────────────────────────────────
@@ -78,6 +80,6 @@ export const settingsApi = {
 
 // ── Alerts (Phase 4) ──────────────────────────────────────────────────────────
 export const alertsApi = {
-  getAlerts: () => api.get('/alerts'),
+  getAlerts: (type) => api.get('/alerts', { params: type ? { alert_type: type } : {} }),
   sendTest: () => api.post('/alerts/test'),
 }

@@ -12,7 +12,7 @@ GET  /api/trades/history                  — closed/stopped/expired plans
 """
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -24,6 +24,7 @@ from app.database import get_db
 from app.utils.auth import verify_token
 from app.models.trade_plan import TradePlan
 from app.services import trade_plan as tp_svc
+from app.services import trade_log as trade_log_svc
 
 router = APIRouter(prefix="/api/trades", tags=["trades"])
 
@@ -198,10 +199,11 @@ async def update_status(
         row.notes = body.notes
     if body.closed_price is not None:
         row.closed_price = body.closed_price
-        row.closed_at = datetime.utcnow()
+        row.closed_at = datetime.now(timezone.utc)
     if body.actual_pnl is not None:
         row.actual_pnl = body.actual_pnl
 
+    await trade_log_svc.log_trade_close(db, row)
     await db.commit()
     await db.refresh(row)
     return row

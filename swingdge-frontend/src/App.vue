@@ -9,6 +9,7 @@
         <router-link to="/scanner">Scanner</router-link>
         <router-link to="/market">Market</router-link>
         <router-link to="/history">History</router-link>
+        <router-link to="/alerts">Alerts</router-link>
         <router-link to="/settings">Settings</router-link>
       </div>
     </nav>
@@ -168,5 +169,17 @@ main.with-nav {
   background: rgba(245, 158, 11, 0.15);
   color: var(--yellow);
   border-color: rgba(245, 158, 11, 0.3);
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .nav { padding: 0 10px; gap: 12px; overflow-x: auto; }
+  .nav-links { gap: 4px; }
+  .nav-links a { padding: 4px 6px; font-size: 12px; }
+  .nav-brand { font-size: 14px; flex-shrink: 0; }
+  main { padding: 12px; }
+  main.with-nav { padding-top: 64px; }
+  .grid-2 { grid-template-columns: 1fr; }
+  .grid-3 { grid-template-columns: 1fr 1fr; }
 }
 </style>

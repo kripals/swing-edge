@@ -139,6 +139,47 @@
         </div>
       </div>
 
+      <!-- Fundamentals & Analyst Context -->
+      <div v-if="fundamentals" class="card">
+        <h3 class="section-title">Fundamentals</h3>
+        <div class="fund-grid">
+          <div class="fund-item">
+            <div class="fund-label">P/E Ratio</div>
+            <div class="fund-val">{{ fundamentals.profile?.pe_ratio != null ? fundamentals.profile.pe_ratio.toFixed(1) : '—' }}</div>
+          </div>
+          <div class="fund-item">
+            <div class="fund-label">EPS</div>
+            <div class="fund-val">{{ fundamentals.profile?.eps != null ? '$' + fundamentals.profile.eps.toFixed(2) : '—' }}</div>
+          </div>
+          <div class="fund-item">
+            <div class="fund-label">Beta</div>
+            <div class="fund-val">{{ fundamentals.profile?.beta != null ? fundamentals.profile.beta.toFixed(2) : '—' }}</div>
+          </div>
+          <div class="fund-item">
+            <div class="fund-label">Analyst Rating</div>
+            <div class="fund-val" :class="consensusClass(fundamentals.analyst_ratings?.consensus)">
+              {{ fundamentals.analyst_ratings?.consensus || '—' }}
+            </div>
+          </div>
+        </div>
+        <!-- EPS history -->
+        <div v-if="fundamentals.earnings_history?.length" class="eps-history">
+          <div class="eps-title">EPS History (last 4 quarters)</div>
+          <div class="eps-rows">
+            <div v-for="e in fundamentals.earnings_history" :key="e.date" class="eps-row">
+              <span class="eps-date">{{ e.date }}</span>
+              <span class="eps-actual" :class="e.surprise >= 0 ? 'positive' : 'negative'">
+                {{ e.eps_actual != null ? '$' + e.eps_actual.toFixed(2) : '—' }}
+              </span>
+              <span class="eps-est">est. {{ e.eps_estimate != null ? '$' + e.eps_estimate.toFixed(2) : '—' }}</span>
+              <span class="eps-surprise" :class="e.surprise >= 0 ? 'positive' : 'negative'">
+                {{ e.surprise >= 0 ? '+' : '' }}{{ e.surprise != null ? e.surprise.toFixed(2) : '' }}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Notes (saved plan only) -->
       <div v-if="savedPlan" class="card">
         <h3 class="section-title">Notes</h3>
@@ -205,7 +246,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { tradesApi } from '../services/api'
+import { tradesApi, marketApi } from '../services/api'
 
 // Inline price ladder component
 import { defineComponent, h } from 'vue'
@@ -260,6 +301,7 @@ const router = useRouter()
 
 const plan = ref(null)
 const savedPlan = ref(null)
+const fundamentals = ref(null)
 const loading = ref(false)
 const saving = ref(false)
 const savingNotes = ref(false)
@@ -305,6 +347,13 @@ async function load() {
     error.value = e.response?.data?.detail || e.message || 'Failed to load trade plan'
   } finally {
     loading.value = false
+  }
+
+  // Load fundamentals in background (non-blocking)
+  if (plan.value?.ticker) {
+    marketApi.getEarnings(plan.value.ticker)
+      .then((res) => { fundamentals.value = res.data })
+      .catch(() => {})
   }
 }
 
@@ -405,6 +454,12 @@ function formatSignal(type) {
     BB_BOUNCE: 'BB Bounce', VOLUME_BREAKOUT: 'Vol Breakout', COMBO: 'Combo',
   }
   return map[type] || type
+}
+
+function consensusClass(c) {
+  if (c === 'Buy') return 'positive'
+  if (c === 'Sell') return 'negative'
+  return ''
 }
 
 function signalClass(type) {
@@ -591,4 +646,19 @@ onMounted(load)
   font-size: 13px;
 }
 .save-close-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* Fundamentals */
+.fund-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin-bottom: 16px; }
+.fund-item { text-align: center; padding: 10px 6px; border-right: 1px solid var(--border); }
+.fund-item:last-child { border-right: none; }
+.fund-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.fund-val { font-size: 18px; font-weight: 700; margin-top: 4px; }
+
+.eps-title { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; border-top: 1px solid var(--border); padding-top: 14px; }
+.eps-rows { display: flex; flex-direction: column; gap: 4px; }
+.eps-row { display: flex; align-items: center; gap: 12px; font-size: 12px; padding: 4px 0; border-top: 1px solid var(--border); }
+.eps-date { color: var(--text-muted); min-width: 90px; }
+.eps-actual { font-weight: 700; min-width: 60px; }
+.eps-est { color: var(--text-muted); flex: 1; }
+.eps-surprise { font-weight: 600; min-width: 40px; text-align: right; }
 </style>

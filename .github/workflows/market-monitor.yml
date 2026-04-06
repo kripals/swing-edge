@@ -1,0 +1,177 @@
+name: Market Monitor
+
+on:
+  schedule:
+    # All times in UTC. Eastern Time = UTC-4 (EDT) / UTC-5 (EST).
+    # Using EDT offsets (summer). Adjust ±1h in winter or use UTC+offset logic.
+
+    # 8:00 AM ET → 12:00 UTC
+    - cron: '0 12 * * 1-5'    # earnings-check (weekdays)
+
+    # 9:45 AM ET → 13:45 UTC
+    - cron: '45 13 * * 1-5'   # morning-scan (weekdays)
+
+    # Every 15 min during market hours: 9:45 AM – 4:00 PM ET (13:45–20:00 UTC)
+    - cron: '0,15,30,45 14-19 * * 1-5'   # price-check
+    - cron: '0 20 * * 1-5'               # price-check at 4:00 PM ET
+
+    # 4:30 PM ET → 20:30 UTC
+    - cron: '30 20 * * 1-5'   # sector-update
+
+    # 4:45 PM ET → 20:45 UTC
+    - cron: '45 20 * * 1-5'   # daily-summary
+
+    # 6:00 PM ET → 22:00 UTC
+    - cron: '0 22 * * 1-5'    # macro-update
+
+    # 8:00 AM ET → 12:00 UTC (daily, including weekends for cache health)
+    - cron: '0 12 * * *'      # portfolio-sync (morning)
+    - cron: '0 20 * * *'      # portfolio-sync (evening)
+
+    # 2:00 AM UTC daily
+    - cron: '0 2 * * *'       # cache-cleanup
+
+  # Allow manual trigger from GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'Job to run manually'
+        required: true
+        type: choice
+        options:
+          - morning-scan
+          - price-check
+          - daily-summary
+          - macro-update
+          - earnings-check
+          - portfolio-sync
+          - sector-update
+          - cache-cleanup
+
+jobs:
+  # ── Earnings check — 8:00 AM ET weekdays ──────────────────────────────────
+  earnings-check:
+    if: >
+      github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'earnings-check' ||
+      github.event_name == 'schedule' && github.event.schedule == '0 12 * * 1-5'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger earnings-check
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${{ secrets.RENDER_API_URL }}/api/trigger/earnings-check" \
+            -H "Authorization: Bearer ${{ secrets.TRIGGER_SECRET }}" \
+            -H "Content-Type: application/json"
+
+  # ── Morning scan — 9:45 AM ET weekdays ───────────────────────────────────
+  morning-scan:
+    if: >
+      github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'morning-scan' ||
+      github.event_name == 'schedule' && github.event.schedule == '45 13 * * 1-5'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Wake Render (cold start can take 60s)
+        run: |
+          for i in 1 2 3; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${{ secrets.RENDER_API_URL }}/health")
+            [ "$STATUS" = "200" ] && break
+            sleep 20
+          done
+
+      - name: Trigger morning-scan
+        run: |
+          curl -s -f \
+            -X POST "${{ secrets.RENDER_API_URL }}/api/trigger/morning-scan" \
+            -H "Authorization: Bearer ${{ secrets.TRIGGER_SECRET }}" \
+            -H "Content-Type: application/json"
+
+  # ── Price check — every 15 min during market hours ────────────────────────
+  price-check:
+    if: >
+      github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'price-check' ||
+      github.event_name == 'schedule' && (
+        github.event.schedule == '0,15,30,45 14-19 * * 1-5' ||
+        github.event.schedule == '0 20 * * 1-5'
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger price-check
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${{ secrets.RENDER_API_URL }}/api/trigger/price-check" \
+            -H "Authorization: Bearer ${{ secrets.TRIGGER_SECRET }}" \
+            -H "Content-Type: application/json"
+
+  # ── Sector update — 4:30 PM ET ────────────────────────────────────────────
+  sector-update:
+    if: >
+      github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'sector-update' ||
+      github.event_name == 'schedule' && github.event.schedule == '30 20 * * 1-5'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger sector-update
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${{ secrets.RENDER_API_URL }}/api/trigger/sector-update" \
+            -H "Authorization: Bearer ${{ secrets.TRIGGER_SECRET }}" \
+            -H "Content-Type: application/json"
+
+  # ── Daily summary — 4:45 PM ET ────────────────────────────────────────────
+  daily-summary:
+    if: >
+      github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'daily-summary' ||
+      github.event_name == 'schedule' && github.event.schedule == '45 20 * * 1-5'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger daily-summary
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${{ secrets.RENDER_API_URL }}/api/trigger/daily-summary" \
+            -H "Authorization: Bearer ${{ secrets.TRIGGER_SECRET }}" \
+            -H "Content-Type: application/json"
+
+  # ── Macro update — 6:00 PM ET ─────────────────────────────────────────────
+  macro-update:
+    if: >
+      github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'macro-update' ||
+      github.event_name == 'schedule' && github.event.schedule == '0 22 * * 1-5'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger macro-update
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${{ secrets.RENDER_API_URL }}/api/trigger/macro-update" \
+            -H "Authorization: Bearer ${{ secrets.TRIGGER_SECRET }}" \
+            -H "Content-Type: application/json"
+
+  # ── Portfolio sync — 2x daily ─────────────────────────────────────────────
+  portfolio-sync:
+    if: >
+      github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'portfolio-sync' ||
+      github.event_name == 'schedule' && (
+        github.event.schedule == '0 12 * * *' ||
+        github.event.schedule == '0 20 * * *'
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger portfolio-sync
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${{ secrets.RENDER_API_URL }}/api/trigger/portfolio-sync" \
+            -H "Authorization: Bearer ${{ secrets.TRIGGER_SECRET }}" \
+            -H "Content-Type: application/json"
+
+  # ── Cache cleanup — 2:00 AM daily ─────────────────────────────────────────
+  cache-cleanup:
+    if: >
+      github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'cache-cleanup' ||
+      github.event_name == 'schedule' && github.event.schedule == '0 2 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger cache-cleanup
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${{ secrets.RENDER_API_URL }}/api/trigger/cache-cleanup" \
+            -H "Authorization: Bearer ${{ secrets.TRIGGER_SECRET }}" \
+            -H "Content-Type: application/json"

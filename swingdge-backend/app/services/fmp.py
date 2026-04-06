@@ -1,0 +1,172 @@
+"""
+Financial Modeling Prep (FMP) client — fundamentals + analyst ratings.
+
+Free tier: 250 req/day.
+Primary uses:
+  - Company profile (P/E, EPS, market cap, sector, beta)
+  - Analyst stock recommendations (buy/hold/sell consensus)
+  - Earnings surprises (historical EPS vs estimate)
+
+FMP docs: https://financialmodelingprep.com/developer/docs
+"""
+from __future__ import annotations
+
+from typing import Any
+
+import httpx
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import get_settings
+from app.services import cache as cache_svc
+
+settings = get_settings()
+
+_BASE = "https://financialmodelingprep.com/api/v3"
+_TIMEOUT = 10.0
+
+
+def _fmp_symbol(ticker: str) -> str:
+    """Convert 'SU.TO' → 'SU.TO' (FMP accepts .TO natively for TSX)."""
+    return ticker
+
+
+async def _get(endpoint: str, params: dict[str, Any] | None = None) -> Any:
+    p = {"apikey": settings.fmp_key}
+    if params:
+        p.update(params)
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        resp = await client.get(f"{_BASE}/{endpoint}", params=p)
+        resp.raise_for_status()
+        data = resp.json()
+        if isinstance(data, dict) and "Error Message" in data:
+            raise ValueError(f"FMP error: {data['Error Message']}")
+        return data
+
+
+# ── Company profile ───────────────────────────────────────────────────────────
+
+async def get_profile(db: AsyncSession, ticker: str) -> dict | None:
+    """
+    Fetch company profile: sector, industry, P/E, EPS, beta, market cap, description.
+    Cached 48h.
+    """
+    key = f"fmp:profile:{ticker.upper()}"
+    cached = await cache_svc.cache_get(db, key)
+    if cached is not None:
+        return cached
+
+    symbol = _fmp_symbol(ticker)
+    data = await _get(f"profile/{symbol}")
+
+    if not data or not isinstance(data, list):
+        return None
+
+    raw = data[0]
+    result = {
+        "ticker": ticker,
+        "name": raw.get("companyName"),
+        "sector": raw.get("sector"),
+        "industry": raw.get("industry"),
+        "description": raw.get("description"),
+        "pe_ratio": raw.get("pe"),
+        "eps": raw.get("eps"),
+        "beta": raw.get("beta"),
+        "market_cap": raw.get("mktCap"),
+        "dividend_yield": raw.get("lastDiv"),
+        "52w_high": raw.get("range", "").split("-")[-1].strip() if raw.get("range") else None,
+        "52w_low": raw.get("range", "").split("-")[0].strip() if raw.get("range") else None,
+        "avg_volume": raw.get("volAvg"),
+        "exchange": raw.get("exchangeShortName"),
+        "currency": raw.get("currency"),
+        "website": raw.get("website"),
+    }
+
+    await cache_svc.cache_set(db, key, result, cache_svc.TTL.FUNDAMENTALS, provider="fmp")
+    return result
+
+
+# ── Analyst recommendations ───────────────────────────────────────────────────
+
+async def get_analyst_ratings(db: AsyncSession, ticker: str) -> dict | None:
+    """
+    Latest analyst consensus: strongBuy, buy, hold, sell, strongSell counts.
+    Cached 48h.
+    """
+    key = f"fmp:analyst:{ticker.upper()}"
+    cached = await cache_svc.cache_get(db, key)
+    if cached is not None:
+        return cached
+
+    symbol = _fmp_symbol(ticker)
+    data = await _get(f"analyst-stock-recommendations/{symbol}", {"limit": 1})
+
+    if not data or not isinstance(data, list):
+        return None
+
+    raw = data[0]
+    strong_buy = raw.get("analystRatingsStrongBuy", 0) or 0
+    buy = raw.get("analystRatingsBuy", 0) or 0
+    hold = raw.get("analystRatingsHold", 0) or 0
+    sell = raw.get("analystRatingsSell", 0) or 0
+    strong_sell = raw.get("analystRatingsStrongSell", 0) or 0
+    total = strong_buy + buy + hold + sell + strong_sell
+
+    consensus = "N/A"
+    if total > 0:
+        bullish = strong_buy + buy
+        bearish = sell + strong_sell
+        if bullish / total >= 0.6:
+            consensus = "Buy"
+        elif bearish / total >= 0.4:
+            consensus = "Sell"
+        else:
+            consensus = "Hold"
+
+    result = {
+        "ticker": ticker,
+        "date": raw.get("date"),
+        "consensus": consensus,
+        "strong_buy": strong_buy,
+        "buy": buy,
+        "hold": hold,
+        "sell": sell,
+        "strong_sell": strong_sell,
+        "total": total,
+    }
+
+    await cache_svc.cache_set(db, key, result, cache_svc.TTL.FUNDAMENTALS, provider="fmp")
+    return result
+
+
+# ── Earnings surprises ────────────────────────────────────────────────────────
+
+async def get_earnings_history(db: AsyncSession, ticker: str, limit: int = 4) -> list[dict]:
+    """
+    Last N quarters of EPS actuals vs estimates.
+    Cached 48h.
+    """
+    key = f"fmp:earnings_hist:{ticker.upper()}"
+    cached = await cache_svc.cache_get(db, key)
+    if cached is not None:
+        return cached
+
+    symbol = _fmp_symbol(ticker)
+    data = await _get(f"earnings-surprises/{symbol}")
+
+    if not data or not isinstance(data, list):
+        return []
+
+    result = [
+        {
+            "date": item.get("date"),
+            "eps_actual": item.get("actualEarningResult"),
+            "eps_estimate": item.get("estimatedEarning"),
+            "surprise": round(
+                (item.get("actualEarningResult", 0) or 0) - (item.get("estimatedEarning", 0) or 0), 4
+            ),
+        }
+        for item in data[:limit]
+    ]
+
+    await cache_svc.cache_set(db, key, result, cache_svc.TTL.FUNDAMENTALS, provider="fmp")
+    return result

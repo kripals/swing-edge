@@ -52,6 +52,33 @@
         </div>
       </div>
 
+      <!-- Equity curve -->
+      <div v-if="equityCurve.length > 1" class="card equity-card">
+        <div class="equity-header">
+          <span class="equity-title">Equity Curve</span>
+          <span class="equity-total" :class="equityFinal >= 0 ? 'positive' : 'negative'">
+            {{ equityFinal >= 0 ? '+' : '' }}${{ equityFinal.toFixed(2) }} realized
+          </span>
+        </div>
+        <svg class="equity-svg" :viewBox="`0 0 ${svgW} ${svgH}`" preserveAspectRatio="none">
+          <!-- Zero baseline -->
+          <line
+            :x1="0" :y1="svgZeroY" :x2="svgW" :y2="svgZeroY"
+            stroke="var(--border)" stroke-width="1" stroke-dasharray="4 3"
+          />
+          <!-- Fill area under curve -->
+          <path :d="svgFillPath" :fill="equityFinal >= 0 ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)'" />
+          <!-- Curve line -->
+          <polyline
+            :points="svgPoints"
+            fill="none"
+            :stroke="equityFinal >= 0 ? 'var(--green)' : 'var(--red)'"
+            stroke-width="2"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </div>
+
       <!-- Filter chips -->
       <div class="filter-row">
         <button
@@ -156,6 +183,62 @@ const stats = computed(() => {
   const totalPnl = closed.reduce((sum, t) => sum + t.actual_pnl, 0)
   const winRate = closed.length > 0 ? Math.round((wins / closed.length) * 100) : 0
   return { total: trades.value.length, wins, losses, winRate, totalPnl }
+})
+
+// ── Equity curve ─────────────────────────────────────────────────────────────
+
+const svgW = 600
+const svgH = 80
+const svgPad = 8
+
+const equityCurve = computed(() => {
+  const closed = [...trades.value]
+    .filter((t) => t.actual_pnl != null && t.closed_at)
+    .sort((a, b) => new Date(a.closed_at) - new Date(b.closed_at))
+  let cumulative = 0
+  return closed.map((t) => { cumulative += t.actual_pnl; return cumulative })
+})
+
+const equityFinal = computed(() => equityCurve.value.at(-1) ?? 0)
+
+const svgZeroY = computed(() => {
+  const curve = equityCurve.value
+  if (!curve.length) return svgH / 2
+  const min = Math.min(0, ...curve)
+  const max = Math.max(0, ...curve)
+  const range = max - min || 1
+  return svgPad + ((max - 0) / range) * (svgH - svgPad * 2)
+})
+
+const svgPoints = computed(() => {
+  const curve = equityCurve.value
+  if (curve.length < 2) return ''
+  const min = Math.min(0, ...curve)
+  const max = Math.max(0, ...curve)
+  const range = max - min || 1
+  return curve.map((v, i) => {
+    const x = svgPad + (i / (curve.length - 1)) * (svgW - svgPad * 2)
+    const y = svgPad + ((max - v) / range) * (svgH - svgPad * 2)
+    return `${x},${y}`
+  }).join(' ')
+})
+
+const svgFillPath = computed(() => {
+  const curve = equityCurve.value
+  if (curve.length < 2) return ''
+  const min = Math.min(0, ...curve)
+  const max = Math.max(0, ...curve)
+  const range = max - min || 1
+  const zeroY = svgZeroY.value
+  const pts = curve.map((v, i) => {
+    const x = svgPad + (i / (curve.length - 1)) * (svgW - svgPad * 2)
+    const y = svgPad + ((max - v) / range) * (svgH - svgPad * 2)
+    return [x, y]
+  })
+  const firstX = pts[0][0]
+  const lastX = pts[pts.length - 1][0]
+  const linePts = pts.map(([x, y]) => `${x},${y}`).join(' L')
+  return `M${firstX},${zeroY} L${linePts} L${lastX},${zeroY} Z`
 })
 
 // ── Filters ───────────────────────────────────────────────────────────────────
@@ -331,7 +414,19 @@ onMounted(load)
 .sig-vol       { background: color-mix(in srgb, #10b981 20%, transparent); color: #10b981; }
 .sig-combo     { background: color-mix(in srgb, #f97316 20%, transparent); color: #f97316; }
 
+/* Equity curve */
+.equity-card { padding: 14px 16px; }
+.equity-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.equity-title { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.equity-total { font-size: 13px; font-weight: 700; }
+.equity-svg { width: 100%; height: 80px; display: block; }
+
 /* Shared */
 .positive { color: var(--green); }
 .negative { color: var(--red); }
+
+@media (max-width: 640px) {
+  .trade-prices { display: none; }
+  .trade-row { gap: 10px; }
+}
 </style>

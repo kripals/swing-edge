@@ -98,68 +98,68 @@
 
 ---
 
-## Phase 3 — Market Intelligence
+## Phase 3 — Market Intelligence ✓
 
 ### Backend
-- [ ] Implement Bank of Canada Valet API (overnight rate, USD/CAD, CPI)
-- [ ] Implement commodity price tracking (WTI oil, gold, natural gas, copper via Alpha Vantage)
-- [ ] Build sector rotation tracker (ETF performance: XEG, ZEB, XGD, etc.)
-- [ ] Build relative strength calculator (stock vs TSX Composite, 20-day)
-- [ ] Implement FMP + Finnhub fundamentals (P/E, EPS, earnings dates, analyst ratings)
-- [ ] Add macro context to trade plan generation
-- [ ] Build market data API endpoints:
-  - [ ] `GET /api/market/quote/:ticker`
-  - [ ] `GET /api/market/sectors`
-  - [ ] `GET /api/market/macro`
-  - [ ] `GET /api/market/earnings/:ticker`
+- [x] Implement Bank of Canada Valet API (overnight rate, USD/CAD, CPI) → `services/boc.py`
+- [x] Implement commodity price tracking (WTI oil, gold, natural gas, copper via Alpha Vantage)
+- [x] Build sector rotation tracker (ETF performance: XEG, ZEB, XGD, ZRE, XIT, ZUT, XMA, XHC)
+- [x] Build relative strength calculator (stock vs TSX Composite, 20-day) — already in `services/indicators.py`
+- [x] Implement FMP + Finnhub fundamentals (P/E, EPS, earnings dates, analyst ratings) → `services/fmp.py`
+- [x] Add macro context to trade plan generation (fundamentals panel on TradePlan view)
+- [x] Build market data API endpoints (`app/api/market.py`):
+  - [x] `GET /api/market/quote/:ticker`
+  - [x] `GET /api/market/sectors`
+  - [x] `GET /api/market/macro`
+  - [x] `GET /api/market/earnings/:ticker`
 
 ### Frontend
-- [ ] Build Market view (macro snapshot + sector rotation)
-- [ ] Build SectorHeatmap component
-- [ ] Build EarningsCountdown component
-- [ ] Add macro context panel to Trade Plan detail view
+- [x] Build Market view (macro snapshot + sector rotation + earnings countdown)
+- [x] Build SectorHeatmap component (inline in Market view — color-coded tiles by % change)
+- [x] Build EarningsCountdown component (inline in Market view — days badge + blackout flag)
+- [x] Add macro context panel to Trade Plan detail view (P/E, EPS, beta, analyst consensus, EPS history)
 
 ---
 
-## Phase 4 — Notifications & Scheduling
+## Phase 4 — Notifications & Scheduling ✓
 
 ### Notifications
-- [ ] Implement Telegram notification service (all alert types)
-- [ ] Implement alert fatigue prevention (cooldowns per alert type)
-- [ ] Implement PWA push notifications with VAPID keys (secondary channel)
-- [ ] Build alert API endpoints:
-  - [ ] `GET /api/alerts`
-  - [ ] `POST /api/alerts/test`
+- [x] Implement Telegram notification service (all alert types) → `services/telegram.py`
+- [x] Implement alert fatigue prevention (cooldowns per alert type)
+- [x] Implement PWA push notifications with VAPID keys (secondary channel) → `src/push.js` (stub — needs VAPID keys)
+- [x] Build alert API endpoints:
+  - [x] `GET /api/alerts`
+  - [x] `POST /api/alerts/test`
 
 ### Scheduled Jobs (GitHub Actions)
-- [ ] Implement trigger endpoint handlers:
-  - [ ] `morning-scan` — full scanner pipeline at 9:45 AM ET
-  - [ ] `price-check` — check active trades vs entry/stop/target every 15 min
-  - [ ] `daily-summary` — Telegram daily summary at 4:45 PM ET
-  - [ ] `macro-update` — BoC + commodities at 6:00 PM ET
-  - [ ] `earnings-check` — flag holdings with earnings this week at 8:00 AM ET
-  - [ ] `portfolio-sync` — SnapTrade sync 2x daily
-  - [ ] `sector-update` — sector rotation at 4:30 PM ET
-  - [ ] `cache-cleanup` — purge expired cache rows
-- [ ] Create GitHub Actions workflow file (`.github/workflows/market-monitor.yml`)
+- [x] Implement trigger endpoint handlers:
+  - [x] `morning-scan` — full scanner pipeline at 9:45 AM ET
+  - [x] `price-check` — check active trades vs entry/stop/target every 15 min
+  - [x] `daily-summary` — Telegram daily summary at 4:45 PM ET
+  - [x] `macro-update` — BoC + commodities at 6:00 PM ET
+  - [x] `earnings-check` — flag holdings with earnings this week at 8:00 AM ET
+  - [x] `portfolio-sync` — SnapTrade sync 2x daily
+  - [x] `sector-update` — sector rotation at 4:30 PM ET
+  - [x] `cache-cleanup` — purge expired cache rows
+- [x] Create GitHub Actions workflow file (`.github/workflows/market-monitor.yml`)
 - [ ] Test full trigger flow: GitHub Actions → Render wake → scan → Telegram alert
 
 ### Frontend
-- [ ] Build AlertFeed component
-- [ ] Wire push notification registration in PWA (`push.js`)
+- [x] Build Alerts view (`src/views/Alerts.vue`) — alert history, type filter chips, test button
+- [x] Wire push notification registration in PWA (`push.js`)
 
 ---
 
-## Phase 5 — Trade Tracking & Polish
+## Phase 5 — Trade Tracking & Polish ✓
 
-- [ ] Build trade execution logging (log entry when trade is opened)
-- [ ] Build trade lifecycle (watching → entered → hit T1 → hit T2 → closed/stopped)
-- [ ] Build trade history view (win/loss stats, equity curve)
-- [ ] Build portfolio health check (sector concentration, position limits, TFSA room)
-- [ ] Build RiskGauge component (max drawdown, open exposure)
-- [ ] Create materialized views for dashboard performance
-- [ ] Handle Render cold start gracefully in frontend (loading spinner + retry logic)
-- [ ] Responsive design pass (mobile-first, PWA feel)
+- [x] Build trade execution logging → `services/trade_log.py` (writes TradeHistory on stop/T2)
+- [x] Build trade lifecycle (pending → active → hit_t1 → hit_t2/stopped) — price-check trigger + PATCH status endpoint
+- [x] Build trade history view (win/loss stats, equity curve SVG) — TradeHistory.vue
+- [x] Build portfolio health check (open exposure, risk at stake, max drawdown, sector concentration) → `GET /api/portfolio/health`
+- [x] Build RiskGauge component (active trades bar, open exposure bar, risk at stake, win rate, max DD) — embedded in Dashboard
+- [ ] Create materialized views for dashboard performance (deferred — not needed until scale)
+- [x] Handle Render cold start gracefully in frontend (loading spinner + retry logic + cold-start banner) — Dashboard.vue
+- [x] Responsive design pass (mobile-first nav, grid collapse, trade-prices hidden on mobile)
 - [ ] End-to-end testing (key flows: scan → plan → alert → close)
 - [ ] Final deploy verification: Vercel + Render + Supabase + GitHub Actions all connected
 

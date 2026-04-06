@@ -77,6 +77,9 @@
         </div>
       </div>
 
+      <!-- Risk Gauge -->
+      <RiskGauge />
+
       <!-- Top Movers -->
       <div class="card">
         <h3 class="section-title">Top Movers</h3>
@@ -100,6 +103,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { usePortfolioStore } from '../stores/portfolio'
+import RiskGauge from '../components/RiskGauge.vue'
 
 const store = usePortfolioStore()
 const slowLoad = ref(false)
