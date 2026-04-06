@@ -8,7 +8,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from app.config import get_settings
-from app.api import auth, portfolio, triggers, scanner, trades, market, alerts
+from app.api import auth, portfolio, triggers, scanner, trades, market, alerts, snaptrade
 from app.api import settings as settings_api
 
 settings = get_settings()
@@ -83,6 +83,7 @@ app.include_router(trades.router)
 app.include_router(settings_api.router)
 app.include_router(market.router)
 app.include_router(alerts.router)
+app.include_router(snaptrade.router)
 
 
 # ── Health check (no auth — used by Render + GitHub Actions) ─────────────────
