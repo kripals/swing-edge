@@ -12,7 +12,9 @@ Key design decisions:
 """
 from __future__ import annotations
 
+import asyncio
 import time
+from collections import deque
 from typing import Any
 
 import httpx
@@ -25,6 +27,31 @@ settings = get_settings()
 
 _BASE = "https://api.twelvedata.com"
 _TIMEOUT = 15.0
+
+# ── Rate Limiter (8 calls/minute free tier) ───────────────────────────────────
+
+class _RateLimiter:
+    """Token bucket: max 8 calls per 60s window."""
+    def __init__(self, max_calls: int = 8, period: float = 60.0):
+        self._max = max_calls
+        self._period = period
+        self._timestamps: deque = deque()
+        self._lock = asyncio.Lock()
+
+    async def acquire(self) -> None:
+        async with self._lock:
+            now = time.monotonic()
+            # Drop timestamps older than the window
+            while self._timestamps and now - self._timestamps[0] >= self._period:
+                self._timestamps.popleft()
+            if len(self._timestamps) >= self._max:
+                sleep_for = self._period - (now - self._timestamps[0])
+                if sleep_for > 0:
+                    await asyncio.sleep(sleep_for)
+            self._timestamps.append(time.monotonic())
+
+
+_rate_limiter = _RateLimiter(max_calls=8, period=60.0)
 
 
 # ── Circuit Breaker ───────────────────────────────────────────────────────────
@@ -69,6 +96,7 @@ def _tsx_symbol(ticker: str) -> str:
 async def _get(endpoint: str, params: dict[str, Any]) -> dict[str, Any]:
     if _circuit.is_open:
         raise RuntimeError("Twelve Data circuit breaker is open — too many recent failures")
+    await _rate_limiter.acquire()
     params["apikey"] = settings.twelve_data_key
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         try:
@@ -179,8 +207,6 @@ async def get_indicators(
     # Twelve Data supports fetching multiple indicators per call via the complex_data endpoint
     # but on free tier we batch indicator requests as separate calls
     # Each call below uses 1 API credit
-
-    import asyncio
 
     async def fetch(indicator: str, params: dict) -> tuple[str, Any]:
         p = {"symbol": symbol, "interval": "1day", "outputsize": 1, **params}
