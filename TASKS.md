@@ -165,7 +165,28 @@
 
 ---
 
-## Phase 6 — SaaS Prep (Future / Optional)
+## Phase 6 — Dynamic Ticker Universe
+
+> Goal: replace the hardcoded 56-ticker watchlist with a live-synced universe pulled from market index constituents, so the scanner discovers new opportunities automatically.
+
+### Backend
+
+- [ ] Build `services/universe_sync.py` — fetches TSX constituents from FMP (`/v3/symbol/TSX`) and filters to common stocks only (exclude leveraged ETFs by name pattern)
+- [ ] Add basic quality filter at sync time: skip tickers where price < $5 (proxy for micro-cap; exact market cap check deferred — too many API calls)
+- [ ] Upsert new tickers into `ticker_universe` with `is_active=True`; set `is_active=False` for tickers no longer in the source list (delisted guard)
+- [ ] Build trigger endpoint handler `universe-sync` — calls `universe_sync.run_sync(db)` and returns count of added/deactivated tickers
+- [ ] Add `universe-sync` to GitHub Actions workflow (`.github/workflows/market-monitor.yml`) — run weekly on Sunday at 6:00 AM ET
+- [ ] Verify rate limit headroom after universe expansion: target ≤ 300 Twelve Data calls per morning scan (150 tickers × 2 calls each)
+
+### Testing & Validation
+
+- [ ] Dry-run sync against local DB — confirm upsert logic, no duplicates, `twelve_data_symbol` format correct (`:TSX` suffix for TSX stocks)
+- [ ] Run scanner against expanded universe — confirm no regressions in signal detection or scoring
+- [ ] Confirm `is_active=False` tickers are skipped by `_get_active_tickers()` in `scanner.py`
+
+---
+
+## Phase 7 — SaaS Prep (Future / Optional)
 
 - [ ] Upgrade Render → Railway Hobby ($5/mo) for always-on + APScheduler
 - [ ] Multi-user auth (Supabase Auth or Clerk)
