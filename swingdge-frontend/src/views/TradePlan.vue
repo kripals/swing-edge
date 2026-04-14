@@ -71,7 +71,10 @@
 
       <!-- Price Ladder -->
       <div class="card">
-        <h3 class="section-title">Price Levels</h3>
+        <h3 class="section-title">
+          Price Levels
+          <InfoTooltip text="The price map for this trade. Buy in the blue Entry zone. Exit half at Target 1, the rest at Target 2. If price falls to the red Stop Loss, exit to limit your loss." />
+        </h3>
         <div class="price-ladder">
           <PriceLadder
             :stop="plan.stop_loss"
@@ -87,25 +90,37 @@
         <div class="level-table">
           <div class="level-row t2-row">
             <span class="level-dot green-dot"></span>
-            <span class="level-name">Target 2 (full exit)</span>
+            <span class="level-name">
+              Target 2 (full exit)
+              <InfoTooltip text="Sell your remaining shares here. This is the full profit target based on a 4:1 reward/risk minimum." position="left" />
+            </span>
             <span class="level-price">${{ fmt(plan.target_2) }}</span>
             <span class="level-pct positive">+{{ fromEntry(plan.target_2) }}%</span>
           </div>
           <div class="level-row t1-row">
             <span class="level-dot green-dot faded"></span>
-            <span class="level-name">Target 1 (partial exit)</span>
+            <span class="level-name">
+              Target 1 (partial exit)
+              <InfoTooltip text="Sell half your shares here and move your stop loss to break-even. Locks in profit while letting the other half ride." position="left" />
+            </span>
             <span class="level-price">${{ fmt(plan.target_1) }}</span>
             <span class="level-pct positive">+{{ fromEntry(plan.target_1) }}%</span>
           </div>
           <div class="level-row entry-row">
             <span class="level-dot blue-dot"></span>
-            <span class="level-name">Entry zone</span>
+            <span class="level-name">
+              Entry zone
+              <InfoTooltip text="The price range to buy in. Wait for the price to pull back into this zone before placing your buy order." position="left" />
+            </span>
             <span class="level-price">${{ fmt(plan.entry_low) }} – ${{ fmt(plan.entry_high) }}</span>
             <span class="level-pct muted">mid ${{ fmt(plan.entry_mid || plan.current_price) }}</span>
           </div>
           <div class="level-row stop-row">
             <span class="level-dot red-dot"></span>
-            <span class="level-name">Stop loss</span>
+            <span class="level-name">
+              Stop loss
+              <InfoTooltip text="Your exit price if the trade goes wrong. If price drops here, sell immediately to cut the loss. Set 1× ATR below entry." position="left" />
+            </span>
             <span class="level-price">${{ fmt(plan.stop_loss) }}</span>
             <span class="level-pct negative">{{ fromEntry(plan.stop_loss) }}%</span>
           </div>
@@ -115,23 +130,35 @@
       <!-- Key Metrics -->
       <div class="metrics-grid">
         <div class="metric-card card">
-          <div class="metric-label">Risk/Reward</div>
+          <div class="metric-label">
+            Risk/Reward
+            <InfoTooltip text="Ratio of potential profit to potential loss. 2:1 means you make $2 for every $1 risked. Minimum 2:1 required — below this the trade isn't worth taking." position="left" />
+          </div>
           <div class="metric-value" :class="rrClass(plan.risk_reward_ratio)">
             {{ plan.risk_reward_ratio }}:1
           </div>
         </div>
         <div class="metric-card card">
-          <div class="metric-label">Position Size</div>
+          <div class="metric-label">
+            Position Size
+            <InfoTooltip text="How much money to invest. Automatically sized so that if the stop loss is hit, you lose exactly 1% of your account — no more." position="left" />
+          </div>
           <div class="metric-value">${{ fmtK(plan.position_size_dollars) }}</div>
           <div class="metric-sub">{{ plan.position_size_shares != null ? Math.floor(plan.position_size_shares) + ' shares' : '' }}</div>
         </div>
         <div class="metric-card card">
-          <div class="metric-label">Risk Amount</div>
+          <div class="metric-label">
+            Risk Amount
+            <InfoTooltip text="The maximum dollar loss on this trade if the stop loss is hit. Fixed at 1% of your account to protect capital across multiple trades." position="left" />
+          </div>
           <div class="metric-value negative">${{ fmt(plan.risk_amount) }}</div>
           <div class="metric-sub">1% of account</div>
         </div>
         <div class="metric-card card">
-          <div class="metric-label">FX Cost</div>
+          <div class="metric-label">
+            FX Cost
+            <InfoTooltip text="Wealthsimple charges 1.5% to convert CAD to USD when buying, and 1.5% back when selling. Total 3% round-trip cost that reduces your actual profit." position="left" />
+          </div>
           <div class="metric-value" :class="plan.fx_cost_pct > 0 ? 'warning' : 'positive'">
             {{ plan.fx_cost_pct > 0 ? plan.fx_cost_pct + '%' : 'None' }}
           </div>
@@ -144,19 +171,31 @@
         <h3 class="section-title">Fundamentals</h3>
         <div class="fund-grid">
           <div class="fund-item">
-            <div class="fund-label">P/E Ratio</div>
+            <div class="fund-label">
+              P/E Ratio
+              <InfoTooltip text="Price-to-Earnings: how much investors pay per $1 of profit. Lower = cheaper. TSX average ~15. Very high P/E means expensive or high-growth expectations." position="bottom" />
+            </div>
             <div class="fund-val">{{ fundamentals.profile?.pe_ratio != null ? fundamentals.profile.pe_ratio.toFixed(1) : '—' }}</div>
           </div>
           <div class="fund-item">
-            <div class="fund-label">EPS</div>
+            <div class="fund-label">
+              EPS
+              <InfoTooltip text="Earnings Per Share: company profit divided by total shares. Higher is better. Watch for trend — rising EPS = growing company." position="bottom" />
+            </div>
             <div class="fund-val">{{ fundamentals.profile?.eps != null ? '$' + fundamentals.profile.eps.toFixed(2) : '—' }}</div>
           </div>
           <div class="fund-item">
-            <div class="fund-label">Beta</div>
+            <div class="fund-label">
+              Beta
+              <InfoTooltip text="How volatile this stock is vs the overall market. Beta 1.0 = moves with market. Beta 1.5 = 50% more volatile. Higher beta = bigger swings." position="bottom" />
+            </div>
             <div class="fund-val">{{ fundamentals.profile?.beta != null ? fundamentals.profile.beta.toFixed(2) : '—' }}</div>
           </div>
           <div class="fund-item">
-            <div class="fund-label">Analyst Rating</div>
+            <div class="fund-label">
+              Analyst Rating
+              <InfoTooltip text="Consensus view from Wall Street analysts covering this stock. Buy/Hold/Sell based on their price targets and research." position="left" />
+            </div>
             <div class="fund-val" :class="consensusClass(fundamentals.analyst_ratings?.consensus)">
               {{ fundamentals.analyst_ratings?.consensus || '—' }}
             </div>
@@ -247,6 +286,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { tradesApi, marketApi } from '../services/api'
+import InfoTooltip from '../components/InfoTooltip.vue'
 
 // Inline price ladder component
 import { defineComponent, h } from 'vue'
@@ -538,7 +578,7 @@ onMounted(load)
 .warning-icon { flex-shrink: 0; }
 
 /* Price ladder */
-.section-title { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
+.section-title { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; display: flex; align-items: center; }
 .price-ladder { margin-bottom: 16px; }
 
 .level-table { display: flex; flex-direction: column; gap: 6px; }
@@ -554,7 +594,7 @@ onMounted(load)
 .blue-dot  { background: var(--blue); }
 .red-dot   { background: var(--red); }
 
-.level-name  { flex: 1; color: var(--text-muted); }
+.level-name  { flex: 1; color: var(--text-muted); display: flex; align-items: center; }
 .level-price { font-weight: 600; min-width: 120px; text-align: right; }
 .level-pct   { min-width: 60px; text-align: right; font-size: 12px; }
 .muted       { color: var(--text-muted); }
@@ -562,7 +602,7 @@ onMounted(load)
 /* Metrics grid */
 .metrics-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .metric-card { text-align: center; padding: 14px 10px; }
-.metric-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+.metric-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; display: flex; align-items: center; justify-content: center; }
 .metric-value { font-size: 22px; font-weight: 700; }
 .metric-sub   { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
 
@@ -651,7 +691,7 @@ onMounted(load)
 .fund-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin-bottom: 16px; }
 .fund-item { text-align: center; padding: 10px 6px; border-right: 1px solid var(--border); }
 .fund-item:last-child { border-right: none; }
-.fund-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.fund-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; justify-content: center; }
 .fund-val { font-size: 18px; font-weight: 700; margin-top: 4px; }
 
 .eps-title { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; border-top: 1px solid var(--border); padding-top: 14px; }

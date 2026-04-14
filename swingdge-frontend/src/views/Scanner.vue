@@ -75,6 +75,15 @@
       </div>
 
       <!-- Candidates list -->
+      <!-- Legend -->
+      <div v-if="!loading && filtered.length" class="legend-row">
+        <span class="legend-label">Signal strength:</span>
+        <span class="legend-item strong-bar-ex">Strong (70%+)</span>
+        <span class="legend-item medium-bar-ex">Medium (50–70%)</span>
+        <span class="legend-item weak-bar-ex">Weak (40–50%)</span>
+        <InfoTooltip text="A score out of 9 criteria: uptrend, RSI zone, MACD direction, EMA crossover, Bollinger Band, volume, relative strength vs TSX. 40% minimum to appear here." position="bottom" />
+      </div>
+
       <div v-if="!loading && filtered.length" class="candidates">
         <div
           v-for="c in filtered"
@@ -111,26 +120,31 @@
             <span class="ind-chip" v-if="c.current_price != null">
               ${{ fmt(c.current_price) }}
             </span>
-            <span class="ind-chip" :class="rsiClass(c.rsi_14)" v-if="c.rsi_14 != null">
+            <span class="ind-chip" :class="rsiClass(c.rsi_14)" v-if="c.rsi_14 != null"
+              :title="`RSI (Relative Strength Index): measures momentum 0–100. Under 30 = oversold/potential buy. Over 70 = overbought. Current: ${fmt(c.rsi_14)}`">
               RSI {{ fmt(c.rsi_14) }}
             </span>
-            <span class="ind-chip" v-if="c.volume_ratio != null">
+            <span class="ind-chip" v-if="c.volume_ratio != null"
+              :title="`Volume ratio: today's trading volume vs 20-day average. ${fmt(c.volume_ratio)}× means ${fmt(c.volume_ratio)} times the normal volume. Higher = more interest.`">
               Vol {{ fmt(c.volume_ratio) }}x
             </span>
-            <span class="ind-chip" :class="c.above_sma_50 ? 'chip-green' : 'chip-red'">
+            <span class="ind-chip" :class="c.above_sma_50 ? 'chip-green' : 'chip-red'"
+              :title="c.above_sma_50 ? 'Price is above the 50-day moving average — stock is in an uptrend.' : 'Price is below the 50-day moving average — stock is in a downtrend. Most buy signals require being above this line.'">
               {{ c.above_sma_50 ? '▲ SMA50' : '▼ SMA50' }}
             </span>
-            <span class="ind-chip" v-if="c.relative_strength != null" :class="c.relative_strength > 0 ? 'chip-green' : 'chip-red'">
+            <span class="ind-chip" v-if="c.relative_strength != null" :class="c.relative_strength > 0 ? 'chip-green' : 'chip-red'"
+              :title="`Relative Strength vs TSX Composite over 20 days. Positive means this stock is outperforming the overall market.`">
               RS {{ c.relative_strength > 0 ? '+' : '' }}{{ fmt(c.relative_strength) }}%
             </span>
-            <span class="ind-chip warning-chip" v-if="c.earnings_days_away != null && c.earnings_days_away <= 10">
+            <span class="ind-chip warning-chip" v-if="c.earnings_days_away != null && c.earnings_days_away <= 10"
+              :title="`Earnings report in ${c.earnings_days_away} days. Stocks can move 5–20% on earnings — we avoid new trades within 5 days of earnings.`">
               Earnings {{ c.earnings_days_away }}d
             </span>
           </div>
 
           <!-- Signals list (active conditions) -->
           <div v-if="c.signals && c.signals.length" class="signals-list">
-            <span v-for="s in c.signals" :key="s" class="signal-tag">{{ s }}</span>
+            <span v-for="s in c.signals" :key="s" class="signal-tag" :title="signalExplain(s)">{{ formatSignal(s) }}</span>
           </div>
 
           <!-- Notes -->
@@ -159,6 +173,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { scannerApi } from '../services/api'
+import InfoTooltip from '../components/InfoTooltip.vue'
 
 const router = useRouter()
 
@@ -281,6 +296,19 @@ function formatSignal(type) {
   return map[type] || type
 }
 
+function signalExplain(type) {
+  const map = {
+    RSI_PULLBACK: 'RSI between 30–50 while above SMA 50 — stock pulled back in an uptrend, potential re-entry.',
+    RSI_REVERSAL: 'RSI crossed above 30 from oversold territory — potential bottom bounce.',
+    MACD_CROSSOVER: 'MACD histogram turned positive — momentum has shifted from bearish to bullish.',
+    EMA_CROSSOVER: '9-day EMA crossed above 21-day EMA — short-term trend turned bullish.',
+    BB_BOUNCE: 'Price is near or below the lower Bollinger Band — statistically oversold, mean reversion likely.',
+    VOLUME_BREAKOUT: 'Price above SMA 50 and 200 on more than 2× normal volume — institutional buying pressure.',
+    COMBO: 'Two or more signals fired at once — higher conviction setup.',
+  }
+  return map[type] || type
+}
+
 function signalClass(type) {
   const map = {
     RSI_PULLBACK: 'sig-blue',
@@ -379,6 +407,14 @@ onMounted(() => loadResults())
 .empty-card { text-align: center; padding: 40px 16px; }
 .empty-title { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
 .empty-sub { color: var(--text-muted); font-size: 13px; }
+
+/* Legend */
+.legend-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 11px; color: var(--text-muted); }
+.legend-label { font-weight: 600; }
+.legend-item { padding: 2px 8px; border-radius: 4px; font-size: 11px; }
+.strong-bar-ex { background: rgba(34,197,94,0.15); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
+.medium-bar-ex { background: rgba(245,158,11,0.15); color: var(--yellow); border: 1px solid rgba(245,158,11,0.25); }
+.weak-bar-ex   { background: rgba(59,130,246,0.15);  color: var(--blue);   border: 1px solid rgba(59,130,246,0.25); }
 
 /* Candidates */
 .candidates { display: flex; flex-direction: column; gap: 10px; }

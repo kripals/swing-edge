@@ -19,6 +19,7 @@
           <div class="total-value">{{ store.formatCad(store.totalValueCad) }}</div>
           <div class="total-pnl" :class="store.totalPnl >= 0 ? 'positive' : 'negative'">
             {{ store.formatCad(store.totalPnl) }} ({{ store.formatPct(store.totalPnlPct) }}) total unrealized
+            <InfoTooltip text="Unrealized means paper profit/loss on holdings you still own. It only becomes real money when you sell." />
           </div>
         </div>
         <button @click="store.fetchSummary()" class="refresh-btn" :disabled="store.loading">
@@ -59,13 +60,17 @@
           </div>
           <div v-if="acc.contribution_room" class="account-meta">
             TFSA room: {{ store.formatCad(acc.contribution_room) }}
+            <InfoTooltip text="How much more you can contribute to this TFSA without triggering a tax penalty." position="left" />
           </div>
         </div>
       </div>
 
       <!-- Sector Weights -->
       <div v-if="Object.keys(store.sectorWeights).length" class="card">
-        <h3 class="section-title">Sector Allocation</h3>
+        <h3 class="section-title">
+          Sector Allocation
+          <InfoTooltip text="How your portfolio is split across industries. Max 30% in any one sector — yellow means you're over the limit and too concentrated." />
+        </h3>
         <div class="sector-list">
           <div v-for="(weight, sector) in sortedSectors" :key="sector" class="sector-row">
             <span class="sector-name">{{ sector }}</span>
@@ -82,7 +87,10 @@
 
       <!-- Top Movers -->
       <div class="card">
-        <h3 class="section-title">Top Movers</h3>
+        <h3 class="section-title">
+          Top Movers
+          <InfoTooltip text="Your holdings sorted by biggest price move (up or down) today." />
+        </h3>
         <div class="holdings-mini">
           <div v-for="h in topMovers" :key="h.id" class="holding-mini-row">
             <span class="ticker">{{ h.ticker }}</span>
@@ -91,7 +99,7 @@
             <span :class="h.unrealized_pnl_pct >= 0 ? 'positive' : 'negative'" class="holding-pnl">
               {{ store.formatPct(h.unrealized_pnl_pct) }}
             </span>
-            <span v-if="h.has_fx_cost" class="fx-badge">FX</span>
+            <span v-if="h.has_fx_cost" class="fx-badge" title="US stock — Wealthsimple charges 1.5% each way to convert CAD↔USD (3% round-trip)">FX</span>
           </div>
         </div>
         <router-link to="/portfolio" class="see-all">See all holdings →</router-link>
@@ -104,6 +112,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { usePortfolioStore } from '../stores/portfolio'
 import RiskGauge from '../components/RiskGauge.vue'
+import InfoTooltip from '../components/InfoTooltip.vue'
 
 const store = usePortfolioStore()
 const slowLoad = ref(false)
@@ -186,7 +195,7 @@ function formatFlag(flag) {
 .flags-row { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .problems-card { border-color: rgba(239, 68, 68, 0.4); }
-.section-title { font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+.section-title { font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; }
 
 .problem-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
 .problem-row:last-child { border-bottom: none; }

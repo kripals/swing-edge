@@ -1,6 +1,9 @@
 <template>
   <div class="risk-gauge card">
-    <h3 class="gauge-title">Portfolio Risk</h3>
+    <h3 class="gauge-title">
+      Portfolio Risk
+      <InfoTooltip text="Tracks how much risk you currently have across all open trades. Green = healthy, yellow = caution, red = at limit." position="left" />
+    </h3>
 
     <div v-if="loading" class="gauge-loading">
       <div class="spinner-sm"></div>
@@ -9,7 +12,10 @@
     <template v-else-if="health">
       <!-- Active trades bar -->
       <div class="gauge-row">
-        <span class="gauge-label">Active Trades</span>
+        <span class="gauge-label">
+          Active Trades
+          <InfoTooltip text="Number of open trade plans vs the maximum of 5. More than 5 active trades spreads your attention too thin." position="left" />
+        </span>
         <div class="bar-wrap">
           <div
             class="bar"
@@ -24,7 +30,10 @@
 
       <!-- Open exposure bar -->
       <div class="gauge-row">
-        <span class="gauge-label">Open Exposure</span>
+        <span class="gauge-label">
+          Open Exposure
+          <InfoTooltip text="Total value of your active trade positions as a % of your portfolio. High exposure means more of your money is at risk in active trades." position="left" />
+        </span>
         <div class="bar-wrap">
           <div
             class="bar"
@@ -39,7 +48,10 @@
 
       <!-- Risk at stake bar -->
       <div class="gauge-row">
-        <span class="gauge-label">Risk at Stake</span>
+        <span class="gauge-label">
+          Risk at Stake
+          <InfoTooltip text="How much of your portfolio you'd lose if ALL active trades hit their stop loss at once. Target: keep below 3%." position="left" />
+        </span>
         <div class="bar-wrap">
           <div
             class="bar"
@@ -62,17 +74,26 @@
           <div class="gs-val" :class="health.win_rate_pct >= 50 ? 'positive' : 'negative'">
             {{ health.win_rate_pct }}%
           </div>
-          <div class="gs-label">Win Rate</div>
+          <div class="gs-label">
+            Win Rate
+            <InfoTooltip text="% of closed trades that were profitable. With 2:1 reward/risk, you only need 40%+ to be profitable overall." position="left" />
+          </div>
         </div>
         <div class="gs">
           <div class="gs-val" :class="health.total_realized_pnl >= 0 ? 'positive' : 'negative'">
             {{ health.total_realized_pnl >= 0 ? '+' : '' }}${{ health.total_realized_pnl.toFixed(0) }}
           </div>
-          <div class="gs-label">Realized</div>
+          <div class="gs-label">
+            Realized
+            <InfoTooltip text="Actual profit or loss from trades you've already closed. This is real money, unlike unrealized P&L." position="left" />
+          </div>
         </div>
         <div class="gs">
           <div class="gs-val negative">${{ health.max_drawdown_cad.toFixed(0) }}</div>
-          <div class="gs-label">Max DD</div>
+          <div class="gs-label">
+            Max DD
+            <InfoTooltip text="Max Drawdown — the largest loss from a high point to a low point across your closed trade history." position="left" />
+          </div>
         </div>
       </div>
 
@@ -89,6 +110,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { portfolioApi } from '../services/api'
+import InfoTooltip from './InfoTooltip.vue'
 
 const health = ref(null)
 const loading = ref(false)
@@ -154,7 +176,8 @@ onMounted(load)
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .gauge-row { display: flex; align-items: center; gap: 10px; }
-.gauge-label { font-size: 12px; color: var(--text-muted); width: 110px; flex-shrink: 0; }
+.gauge-label { font-size: 12px; color: var(--text-muted); width: 110px; flex-shrink: 0; display: flex; align-items: center; }
+.gs-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; display: flex; align-items: center; justify-content: center; }
 .bar-wrap { flex: 1; background: var(--bg, #0f172a); border-radius: 4px; height: 6px; overflow: hidden; }
 .bar { height: 100%; border-radius: 4px; transition: width 0.4s; min-width: 3px; }
 .bar-green  { background: var(--green); }
@@ -166,7 +189,6 @@ onMounted(load)
 .gauge-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 4px; }
 .gs { text-align: center; }
 .gs-val { font-size: 16px; font-weight: 700; }
-.gs-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
 
 /* Warnings */
 .gauge-warnings { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
