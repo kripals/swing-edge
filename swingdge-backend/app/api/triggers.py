@@ -17,14 +17,14 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, BackgroundTasks, Depends, Header
 
 logger = logging.getLogger(__name__)
 from pydantic import BaseModel
 from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from app.database import get_db, AsyncSessionLocal
 from app.utils.auth import verify_trigger_secret
 from app.services import cache as cache_svc
 
@@ -65,79 +65,94 @@ async def _run_timed(job_name: str, coro) -> TriggerResult:
 
 # ── morning-scan ──────────────────────────────────────────────────────────────
 
+async def _morning_scan_bg() -> None:
+    """
+    Background task: runs the full scan with its own DB session.
+    Called by the trigger endpoint so the HTTP response returns immediately,
+    allowing GitHub Actions (10-min timeout) to succeed even when the scan
+    takes 30-60+ minutes due to Twelve Data rate limiting.
+    """
+    from app.services import scanner as scanner_svc
+    from app.services import telegram as tg
+    from app.models.scan_result import ScanResult
+    from app.models.ticker import Ticker
+
+    logger.info("morning-scan background task started")
+    start = datetime.now(timezone.utc)
+
+    try:
+        async with AsyncSessionLocal() as db:
+            today = date.today()
+
+            candidates = await scanner_svc.run_scan(db)
+
+            await db.execute(
+                ScanResult.__table__.delete().where(ScanResult.scan_date == today)
+            )
+            for c in candidates:
+                db.add(ScanResult(
+                    scan_date=today,
+                    ticker=c.ticker,
+                    exchange=c.exchange,
+                    current_price=c.current_price,
+                    signal_type=c.signal_type,
+                    signal_strength=c.signal_strength,
+                    rsi_14=c.rsi_14,
+                    macd_histogram=c.macd_histogram,
+                    volume_ratio=c.volume_ratio,
+                    above_sma_50=c.above_sma_50,
+                    atr_14=c.atr_14,
+                    relative_strength=c.relative_strength,
+                    sector=c.sector,
+                    notes=c.notes,
+                ))
+            await db.commit()
+
+            ticker_count_res = await db.execute(
+                select(func.count()).select_from(Ticker).where(Ticker.is_active == True)
+            )
+            total_scanned = ticker_count_res.scalar_one_or_none() or 0
+
+            candidate_dicts = [
+                {
+                    "ticker": c.ticker,
+                    "signal_type": c.signal_type,
+                    "signal_strength": c.signal_strength,
+                    "current_price": c.current_price,
+                }
+                for c in candidates
+            ]
+            message = tg.fmt_morning_briefing(
+                candidates=candidate_dicts,
+                scan_date=today.isoformat(),
+                total_scanned=total_scanned,
+            )
+            await tg.send_alert(db, alert_type="morning_briefing", message=message, priority="high")
+
+            duration_s = int((datetime.now(timezone.utc) - start).total_seconds())
+            logger.info("morning-scan done: %d tickers, %d candidates, %ds", total_scanned, len(candidates), duration_s)
+
+    except Exception:
+        logger.exception("morning-scan background task failed")
+
+
 @router.post("/morning-scan")
 async def trigger_morning_scan(
+    background_tasks: BackgroundTasks,
     authorization: str | None = Header(default=None),
-    db: AsyncSession = Depends(get_db),
-) -> TriggerResult:
+) -> dict:
+    """
+    Accepts the scan request and returns immediately.
+    The actual scan runs as a background task (can take 30-60+ min on cold cache).
+    """
     verify_trigger_secret(authorization)
-
-    async def _job():
-        from app.services import scanner as scanner_svc
-        from app.services import telegram as tg
-        from app.models.scan_result import ScanResult
-
-        today = date.today()
-
-        # Run full scan
-        candidates = await scanner_svc.run_scan(db)
-
-        # Persist results (delete today's existing rows first to avoid dupes)
-        await db.execute(
-            ScanResult.__table__.delete().where(ScanResult.scan_date == today)
-        )
-        for c in candidates:
-            row = ScanResult(
-                scan_date=today,
-                ticker=c.ticker,
-                exchange=c.exchange,
-                current_price=c.current_price,
-                signal_type=c.signal_type,
-                signal_strength=c.signal_strength,
-                rsi_14=c.rsi_14,
-                macd_histogram=c.macd_histogram,
-                volume_ratio=c.volume_ratio,
-                above_sma_50=c.above_sma_50,
-                atr_14=c.atr_14,
-                relative_strength=c.relative_strength,
-                sector=c.sector,
-                notes=c.notes,
-            )
-            db.add(row)
-        await db.commit()
-
-        # Count tickers scanned (approximate — from model ticker universe)
-        from app.models.ticker import Ticker
-        ticker_count_res = await db.execute(
-            select(func.count()).select_from(Ticker).where(Ticker.is_active == True)
-        )
-        total_scanned = ticker_count_res.scalar_one_or_none() or 0
-
-        # Send Telegram morning briefing
-        candidate_dicts = [
-            {
-                "ticker": c.ticker,
-                "signal_type": c.signal_type,
-                "signal_strength": c.signal_strength,
-                "current_price": c.current_price,
-            }
-            for c in candidates
-        ]
-        message = tg.fmt_morning_briefing(
-            candidates=candidate_dicts,
-            scan_date=today.isoformat(),
-            total_scanned=total_scanned,
-        )
-        await tg.send_alert(
-            db,
-            alert_type="morning_briefing",
-            message=message,
-            priority="high",
-        )
-
-        return f"Scanned {total_scanned} tickers, found {len(candidates)} candidates"
-
-    return await _run_timed("morning-scan", _job())
+    background_tasks.add_task(_morning_scan_bg)
+    return {
+        "job": "morning-scan",
+        "status": "started",
+        "message": "Scan running in background — check Telegram for results",
+        "triggered_at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 # ── price-check ───────────────────────────────────────────────────────────────

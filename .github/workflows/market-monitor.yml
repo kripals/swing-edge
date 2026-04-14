@@ -64,12 +64,14 @@ jobs:
             -H "Content-Type: application/json"
 
   # ── Morning scan — 9:45 AM ET weekdays ───────────────────────────────────
+  # Endpoint returns immediately (scan runs as background task on Render).
+  # Actual scan duration: 5-60 min depending on cache warmth.
   morning-scan:
     if: >
       github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'morning-scan' ||
       github.event_name == 'schedule' && github.event.schedule == '45 13 * * 1-5'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 3
     steps:
       - name: Wake Render (cold start can take 60s)
         run: |
@@ -82,7 +84,7 @@ jobs:
 
       - name: Trigger morning-scan
         run: |
-          curl -s -f \
+          curl -s -f --max-time 30 \
             -X POST "${{ secrets.RENDER_API_URL }}/api/trigger/morning-scan" \
             -H "Authorization: Bearer ${{ secrets.TRIGGER_SECRET }}" \
             -H "Content-Type: application/json"
