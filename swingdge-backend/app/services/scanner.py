@@ -22,6 +22,7 @@ Signal types (from architecture v3 section 12):
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
@@ -34,6 +35,8 @@ from app.services import rules as rules_svc
 from app.services import indicators as ind_svc
 from app.services import earnings as earn_svc
 from app.services import twelve_data
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -87,8 +90,17 @@ async def run_scan(db: AsyncSession) -> list[ScanCandidate]:
 
     results = await asyncio.gather(*[scan_one(t) for t in tickers], return_exceptions=True)
 
+    errors = [r for r in results if isinstance(r, Exception)]
     candidates = [r for r in results if isinstance(r, ScanCandidate)]
     candidates.sort(key=lambda c: c.signal_strength, reverse=True)
+
+    logger.info(
+        "Scan complete: %d tickers, %d candidates, %d errors",
+        len(tickers), len(candidates), len(errors),
+    )
+    if errors:
+        logger.warning("Scan errors (first 3): %s", [str(e) for e in errors[:3]])
+
     return candidates
 
 
@@ -108,20 +120,24 @@ async def _scan_ticker(
     quote = quotes.get(ticker, {})
     price = quote.get("price")
     if price is None or price < min_price:
+        logger.debug("%s: filtered — no quote or price $%.2f < min $%.2f", ticker, price or 0, min_price)
         return None
 
     # ── 2. Earnings blackout ──────────────────────────────────────────────────
     in_blackout, earnings_date, days_away = await earn_svc.is_in_blackout(db, ticker)
     if in_blackout:
+        logger.debug("%s: filtered — earnings blackout (%s, %d days)", ticker, earnings_date, days_away or 0)
         return None
 
     # ── 3. Indicators (API-based) ─────────────────────────────────────────────
     try:
         ind = await twelve_data.get_indicators(db, ticker)
-    except Exception:
+    except Exception as exc:
+        logger.warning("%s: filtered — indicators failed: %s", ticker, exc)
         return None
 
     if not ind:
+        logger.debug("%s: filtered — empty indicators", ticker)
         return None
 
     # ── 4. OHLCV for local extras ─────────────────────────────────────────────
@@ -136,6 +152,7 @@ async def _scan_ticker(
     # Volume ratio check — skip if below minimum avg volume proxy
     volume_ratio = ind.get("volume_ratio")
     if volume_ratio is not None and quote.get("volume", 0) < min_avg_vol:
+        logger.debug("%s: filtered — volume %d < min %d", ticker, quote.get("volume", 0), min_avg_vol)
         return None
 
     # ── 5. Trend filter: price must be above SMA 50 ───────────────────────────
@@ -145,11 +162,16 @@ async def _scan_ticker(
     # ── 6. Signal detection ───────────────────────────────────────────────────
     signals = _detect_signals(price, ind, above_sma_50)
     if not signals:
+        logger.debug("%s: filtered — no signals (above_sma50=%s, rsi=%.1f, macd_hist=%.4f)",
+                     ticker, above_sma_50,
+                     ind.get("rsi_14") or 0,
+                     ind.get("macd_histogram") or 0)
         return None
 
     # ── 7. Scoring ────────────────────────────────────────────────────────────
     score = _score(price, ind, above_sma_50, volume_ratio)
     if score < 0.4:
+        logger.debug("%s: filtered — score %.2f < 0.4 (signals=%s)", ticker, score, signals)
         return None
 
     signal_type = _pick_signal_type(signals)

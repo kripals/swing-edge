@@ -123,7 +123,11 @@ async def get_batch_quotes(
     Fetch real-time quotes for up to 120 tickers in one API call.
     Returns {ticker: {price, change, change_pct, volume, ...}}
     Uses 2-min in-memory TTL (no PostgreSQL persistence for intraday quotes).
+    Falls back to Alpha Vantage individually if Twelve Data circuit is open.
     """
+    import logging
+    _log = logging.getLogger(__name__)
+
     results: dict[str, dict] = {}
     uncached: list[str] = []
 
@@ -137,23 +141,48 @@ async def get_batch_quotes(
     if not uncached:
         return results
 
-    symbols = ",".join(_tsx_symbol(t) for t in uncached)
-    data = await _get("quote", {"symbol": symbols})
+    # ── Try Twelve Data batch ─────────────────────────────────────────────────
+    td_failed = False
+    if not _circuit.is_open:
+        try:
+            symbols = ",".join(_tsx_symbol(t) for t in uncached)
+            data = await _get("quote", {"symbol": symbols})
 
-    # When single symbol: data is a dict. When multiple: data is {symbol: dict}
-    if len(uncached) == 1:
-        ticker = uncached[0]
-        quote = _normalise_quote(data, ticker)
-        results[ticker] = quote
-        cache_svc._mem_set(cache_svc.quote_key(ticker), quote, cache_svc.TTL.INTRADAY_QUOTE)
-    else:
-        for ticker in uncached:
-            symbol = _tsx_symbol(ticker)
-            raw = data.get(symbol, {})
-            if raw:
-                quote = _normalise_quote(raw, ticker)
+            if len(uncached) == 1:
+                ticker = uncached[0]
+                quote = _normalise_quote(data, ticker)
                 results[ticker] = quote
                 cache_svc._mem_set(cache_svc.quote_key(ticker), quote, cache_svc.TTL.INTRADAY_QUOTE)
+            else:
+                for ticker in uncached:
+                    symbol = _tsx_symbol(ticker)
+                    raw = data.get(symbol, {})
+                    if raw:
+                        quote = _normalise_quote(raw, ticker)
+                        results[ticker] = quote
+                        cache_svc._mem_set(cache_svc.quote_key(ticker), quote, cache_svc.TTL.INTRADAY_QUOTE)
+        except Exception as exc:
+            _log.warning("Twelve Data batch quote failed (%s) — falling back to Alpha Vantage", exc)
+            td_failed = True
+    else:
+        _log.warning("Twelve Data circuit open — using Alpha Vantage fallback for quotes")
+        td_failed = True
+
+    # ── Alpha Vantage fallback for any tickers still missing ─────────────────
+    if td_failed:
+        from app.services import alpha_vantage as av
+        still_missing = [t for t in uncached if t not in results]
+        for ticker in still_missing:
+            try:
+                price = await av.get_quote_backup(db, ticker)
+                if price is not None:
+                    quote = {"ticker": ticker, "price": price, "open": None, "high": None,
+                             "low": None, "volume": None, "change": None, "change_pct": None,
+                             "is_market_open": False, "timestamp": None}
+                    results[ticker] = quote
+                    cache_svc._mem_set(cache_svc.quote_key(ticker), quote, cache_svc.TTL.INTRADAY_QUOTE)
+            except Exception as av_exc:
+                _log.warning("Alpha Vantage fallback failed for %s: %s", ticker, av_exc)
 
     return results
 
