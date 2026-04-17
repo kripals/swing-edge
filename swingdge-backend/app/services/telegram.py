@@ -28,9 +28,7 @@ Cooldown periods (per type+ticker combo):
 """
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timezone, timedelta
-from typing import Any
 
 import httpx
 from sqlalchemy import select, desc
@@ -134,9 +132,8 @@ async def send_alert(
     db.add(alert)
     await db.commit()
 
-    # Send via Telegram
-    await send_message(message)
-    return True
+    # Send via Telegram — return whether delivery succeeded
+    return await send_message(message)
 
 
 # ── Formatters (one per alert type) ───────────────────────────────────────────
@@ -230,21 +227,21 @@ def fmt_morning_briefing(candidates: list[dict], scan_date: str, total_scanned: 
 
 def fmt_daily_summary(
     portfolio_value: float,
-    daily_change: float,
-    daily_change_pct: float,
+    total_pnl: float,
+    total_pnl_pct: float,
     active_trades: int,
     candidates_today: int,
     alerts_today: int,
 ) -> str:
-    sign = "+" if daily_change >= 0 else ""
-    change_emoji = "📈" if daily_change >= 0 else "📉"
+    sign = "+" if total_pnl >= 0 else ""
+    change_emoji = "📈" if total_pnl >= 0 else "📉"
     return (
         f"{change_emoji} <b>Daily Summary</b>\n"
         f"\n"
-        f"Portfolio: <b>${portfolio_value:,.0f} CAD</b>\n"
-        f"Today:     <b>{sign}${daily_change:,.2f} ({sign}{daily_change_pct:.2f}%)</b>\n"
+        f"Portfolio:      <b>${portfolio_value:,.0f} CAD</b>\n"
+        f"Unrealized P&L: <b>{sign}${total_pnl:,.2f} ({sign}{total_pnl_pct:.2f}%)</b>\n"
         f"\n"
-        f"Active trades:  {active_trades}\n"
+        f"Active trades:   {active_trades}\n"
         f"Scan candidates: {candidates_today}\n"
         f"Alerts sent:     {alerts_today}"
     )

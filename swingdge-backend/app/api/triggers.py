@@ -86,11 +86,8 @@ async def _morning_scan_bg() -> None:
 
             candidates = await scanner_svc.run_scan(db)
 
-            await db.execute(
-                ScanResult.__table__.delete().where(ScanResult.scan_date == today)
-            )
-            for c in candidates:
-                db.add(ScanResult(
+            new_rows = [
+                ScanResult(
                     scan_date=today,
                     ticker=c.ticker,
                     exchange=c.exchange,
@@ -105,8 +102,16 @@ async def _morning_scan_bg() -> None:
                     relative_strength=c.relative_strength,
                     sector=c.sector,
                     notes=c.notes,
-                ))
-            await db.commit()
+                )
+                for c in candidates
+            ]
+            # Atomic: delete old + insert new in one transaction so a crash
+            # mid-write never leaves the table empty.
+            async with db.begin():
+                await db.execute(
+                    ScanResult.__table__.delete().where(ScanResult.scan_date == today)
+                )
+                db.add_all(new_rows)
 
             ticker_count_res = await db.execute(
                 select(func.count()).select_from(Ticker).where(Ticker.is_active == True)
@@ -169,6 +174,10 @@ async def trigger_price_check(
         from app.services import telegram as tg
         from app.services import trade_log as trade_log_svc
         from app.models.trade_plan import TradePlan
+        from app.utils.market_calendar import is_market_open
+
+        if not is_market_open():
+            return "Market closed today (holiday or weekend) — skipping price-check"
 
         # Fetch all active/watching plans
         result = await db.execute(
@@ -187,14 +196,19 @@ async def trigger_price_check(
 
         for plan in plans:
             q = quotes.get(plan.ticker)
-            if not q or not q.get("close"):
+            if not q or not q.get("price"):
                 continue
 
-            price = float(q["close"])
+            price = float(q["price"])
             stop = float(plan.stop_loss)
             t1 = float(plan.target_1)
             t2 = float(plan.target_2)
             entry_high = float(plan.entry_high)
+
+            # ── P&L helper (entry_mid × shares) ──
+            entry_mid = (float(plan.entry_low) + float(plan.entry_high)) / 2
+            shares = float(plan.position_size_shares or 0)
+            pnl = round((price - entry_mid) * shares, 2) if shares > 0 else None
 
             # ── Check stop hit ──
             if price <= stop and plan.status in ("active", "hit_t1"):
@@ -202,7 +216,7 @@ async def trigger_price_check(
                 plan.closed_price = price
                 plan.closed_at = datetime.now(timezone.utc)
                 await trade_log_svc.log_trade_close(db, plan)
-                msg = tg.fmt_stop_hit(plan.ticker, price, stop)
+                msg = tg.fmt_stop_hit(plan.ticker, price, stop, pnl=pnl)
                 sent = await tg.send_alert(db, "stop_hit", msg, ticker=plan.ticker, priority="critical")
                 if sent:
                     alerts_sent += 1
@@ -215,7 +229,7 @@ async def trigger_price_check(
                 plan.closed_price = price
                 plan.closed_at = datetime.now(timezone.utc)
                 await trade_log_svc.log_trade_close(db, plan)
-                msg = tg.fmt_target_hit(plan.ticker, 2, price)
+                msg = tg.fmt_target_hit(plan.ticker, 2, price, pnl=pnl)
                 sent = await tg.send_alert(db, "target_2_hit", msg, ticker=plan.ticker, priority="high")
                 if sent:
                     alerts_sent += 1
@@ -289,12 +303,13 @@ async def trigger_daily_summary(
         try:
             summary = await portfolio_svc.get_portfolio_summary(db)
             total_value = summary.total_value_cad
-            daily_change = summary.total_unrealized_pnl  # best proxy we have
-            daily_change_pct = (daily_change / (total_value - daily_change) * 100) if total_value else 0.0
+            # No stored previous-day prices — report total unrealized P&L (since purchase), not daily move
+            total_pnl = summary.total_unrealized_pnl
+            total_pnl_pct = (total_pnl / (total_value - total_pnl) * 100) if (total_value - total_pnl) else 0.0
         except Exception:
             total_value = 0.0
-            daily_change = 0.0
-            daily_change_pct = 0.0
+            total_pnl = 0.0
+            total_pnl_pct = 0.0
 
         # Active trades count
         active_res = await db.execute(
@@ -319,8 +334,8 @@ async def trigger_daily_summary(
 
         message = tg.fmt_daily_summary(
             portfolio_value=total_value,
-            daily_change=daily_change,
-            daily_change_pct=daily_change_pct,
+            total_pnl=total_pnl,
+            total_pnl_pct=total_pnl_pct,
             active_trades=active_trades,
             candidates_today=candidates_today,
             alerts_today=alerts_today,
@@ -349,8 +364,8 @@ async def trigger_macro_update(
         # Format a quick summary and send
         overnight = f"{macro.overnight_rate['value']}%" if macro.overnight_rate else "—"
         usd_cad = f"{macro.usd_cad['value']:.4f}" if macro.usd_cad else "—"
-        wti = f"${macro.wti_oil:.2f}" if macro.wti_oil else "—"
-        gold = f"${macro.gold:.2f}" if macro.gold else "—"
+        wti = f"${macro.wti_oil['value']:.2f}" if macro.wti_oil else "—"
+        gold = f"${macro.gold['value']:.2f}" if macro.gold else "—"
 
         message = tg.fmt_macro_update(overnight, usd_cad, wti, gold)
         await tg.send_alert(db, "scan_complete", message, priority="low")
@@ -390,24 +405,21 @@ async def trigger_earnings_check(
 
         for ticker in all_tickers:
             try:
-                info = await earn_svc.get_next_earnings(db, ticker)
-                if info and info.get("earnings_days_away") is not None:
-                    days_away = info["earnings_days_away"]
-                    if days_away <= 7:  # warn up to 7 days ahead
-                        in_blackout = days_away <= 5
-                        msg = tg.fmt_earnings_warning(
-                            ticker=ticker,
-                            days_away=days_away,
-                            earnings_date=str(info.get("next_earnings_date", "")),
-                            in_blackout=in_blackout,
-                        )
-                        priority = "critical" if in_blackout else "medium"
-                        sent = await tg.send_alert(
-                            db, "earnings_warning", msg,
-                            ticker=ticker, priority=priority,
-                        )
-                        if sent:
-                            warnings_sent += 1
+                in_blackout, earnings_date, days_away = await earn_svc.is_in_blackout(db, ticker)
+                if earnings_date is not None and days_away is not None and days_away <= 7:
+                    msg = tg.fmt_earnings_warning(
+                        ticker=ticker,
+                        days_away=days_away,
+                        earnings_date=str(earnings_date),
+                        in_blackout=in_blackout,
+                    )
+                    priority = "critical" if in_blackout else "medium"
+                    sent = await tg.send_alert(
+                        db, "earnings_warning", msg,
+                        ticker=ticker, priority=priority,
+                    )
+                    if sent:
+                        warnings_sent += 1
             except Exception:
                 continue
 

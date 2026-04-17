@@ -1,0 +1,46 @@
+name: Frontend Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'swingdge-frontend/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'swingdge-frontend/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build & Validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: swingdge-frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: swingdge-frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+        run: npm run build
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="⚠️ SwingEdge frontend build failed on branch ${{ github.ref_name }}"

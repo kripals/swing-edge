@@ -38,11 +38,9 @@ def compute_vwap(candles: list[dict], n: int = 20) -> float | None:
     recent = candles[:n]  # candles are newest-first from Twelve Data
     if not recent:
         return None
-    total_pv = sum(_f(c["high"]) + _f(c["low"]) + _f(c["close"]) for c in recent) / 3
     total_v = sum(_f(c["volume"]) for c in recent)
     if total_v == 0:
         return None
-    # Weighted: sum(typical_price * volume) / sum(volume)
     pv_vol = sum(
         ((_f(c["high"]) + _f(c["low"]) + _f(c["close"])) / 3) * _f(c["volume"])
         for c in recent
@@ -92,18 +90,54 @@ def compute_relative_strength(
     return round(ticker_chg - bench_chg, 2)
 
 
+def _compute_ema(closes: list[float], period: int) -> list[float]:
+    """
+    Compute EMA for a list of closing prices (oldest-first).
+    Returns a list of EMA values of the same length (oldest-first).
+    Uses SMA of first `period` closes as seed.
+    """
+    if len(closes) < period:
+        return []
+    k = 2.0 / (period + 1)
+    ema = sum(closes[:period]) / period
+    result = [ema]
+    for price in closes[period:]:
+        ema = price * k + ema * (1 - k)
+        result.append(ema)
+    return result
+
+
+def compute_ema_yesterday(candles: list[dict], period: int) -> float | None:
+    """
+    Compute EMA(period) value for yesterday (candles[1]) using full candle history.
+    candles are newest-first from Twelve Data — we reverse to oldest-first for EMA calc.
+    Returns None if not enough data.
+    """
+    if len(candles) < period + 1:
+        return None
+    # Reverse so oldest is first; drop candles[0] (today) so we compute up to yesterday
+    closes = [_f(c["close"]) for c in reversed(candles[1:])]
+    ema_series = _compute_ema(closes, period)
+    if not ema_series:
+        return None
+    return round(ema_series[-1], 4)
+
+
 def compute_extras(
     candles: list[dict],
     benchmark_candles: list[dict] | None = None,
 ) -> dict[str, float | None]:
     """
-    Compute VWAP, volume_ratio, and optionally relative_strength.
+    Compute VWAP, volume_ratio, relative_strength, and previous-day EMA9/EMA21
+    (used for EMA crossover detection — did it *just* cross?).
     Returns a dict ready to merge into the indicators dict.
     """
     result: dict[str, float | None] = {
         "vwap": compute_vwap(candles),
         "volume_ratio": compute_volume_ratio(candles),
         "relative_strength": None,
+        "ema_9_yesterday": compute_ema_yesterday(candles, 9),
+        "ema_21_yesterday": compute_ema_yesterday(candles, 21),
     }
     if benchmark_candles:
         result["relative_strength"] = compute_relative_strength(candles, benchmark_candles)

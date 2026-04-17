@@ -14,7 +14,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.services import twelve_data, cache as cache_svc
+from app.services import twelve_data, cache as cache_svc, rules as rules_svc
 
 settings = get_settings()
 
@@ -284,10 +284,11 @@ async def get_portfolio_summary(db: AsyncSession) -> PortfolioSummary:
                 portfolio_flags.append(f"SECTOR_OVERWEIGHT:{sector}:{weight:.0f}%")
 
         # Individual position concentration check
+        max_pos_pct = await rules_svc.max_position_pct(db)
         for h in all_holdings:
             if not h.is_leveraged_etf:
                 weight = (h.market_value_cad / total_value) * 100
-                if weight > 15:
+                if weight > max_pos_pct:
                     portfolio_flags.append(f"POSITION_OVERWEIGHT:{h.ticker}:{weight:.0f}%")
 
     total_pnl = total_value - total_cost

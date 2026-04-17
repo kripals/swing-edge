@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.utils.auth import verify_token
 from app.models.scan_result import ScanResult
+from app.models.ticker import Ticker
 from app.services import scanner as scanner_svc
 from app.services import trade_plan as tp_svc
 
@@ -49,6 +50,7 @@ class ScanCandidateOut(BaseModel):
 
 class ScanRunResponse(BaseModel):
     scan_date: date
+    total_tickers: int
     candidates_found: int
     candidates: list[ScanCandidateOut]
     duration_ms: int
@@ -115,10 +117,16 @@ async def run_scan(
         db.add(row)
     await db.commit()
 
+    ticker_count_res = await db.execute(
+        select(func.count()).select_from(Ticker).where(Ticker.is_active == True)
+    )
+    total_tickers = ticker_count_res.scalar_one_or_none() or 0
+
     duration_ms = int((time.monotonic() - start) * 1000)
 
     return ScanRunResponse(
         scan_date=today,
+        total_tickers=total_tickers,
         candidates_found=len(candidates),
         candidates=[ScanCandidateOut(**c.__dict__) for c in candidates],
         duration_ms=duration_ms,

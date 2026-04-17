@@ -166,6 +166,10 @@ async def sync_portfolio(db: AsyncSession) -> dict[str, int]:
             accounts_updated += 1
 
     positions = await get_all_positions()
+
+    # Track which (account_id, ticker) pairs are live so we can prune stale rows
+    live_holdings: dict[int, list[str]] = {}  # account_id -> [ticker, ...]
+
     for pos in positions:
         result = await db.execute(
             text("SELECT id, has_usd_account FROM accounts WHERE snaptrade_account_id = :sid"),
@@ -199,10 +203,28 @@ async def sync_portfolio(db: AsyncSession) -> dict[str, int]:
                 "has_fx": has_fx,
             },
         )
+        live_holdings.setdefault(account_id, []).append(pos["ticker"])
         positions_updated += 1
 
+    # Remove holdings that no longer exist in SnapTrade (positions were sold)
+    positions_deleted = 0
+    for account_id, live_tickers in live_holdings.items():
+        del_result = await db.execute(
+            text("""
+                DELETE FROM holdings
+                WHERE account_id = :account_id
+                  AND ticker != ALL(:live_tickers)
+            """),
+            {"account_id": account_id, "live_tickers": live_tickers},
+        )
+        positions_deleted += del_result.rowcount
+
     await db.commit()
-    return {"accounts_updated": accounts_updated, "positions_updated": positions_updated}
+    return {
+        "accounts_updated": accounts_updated,
+        "positions_updated": positions_updated,
+        "positions_deleted": positions_deleted,
+    }
 
 
 def _clean_ticker(raw: str) -> str:

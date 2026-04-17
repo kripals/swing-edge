@@ -1,6 +1,9 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, status
+from fastapi import Depends, FastAPI, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import get_db
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -89,8 +92,13 @@ app.include_router(snaptrade.router)
 # ── Health check (no auth — used by Render + GitHub Actions) ─────────────────
 
 @app.get("/health", tags=["health"])
-async def health_check() -> dict:
-    return {"status": "ok", "version": "0.1.0"}
+async def health_check(db: AsyncSession = Depends(get_db)) -> dict:
+    from sqlalchemy import text
+    try:
+        await db.execute(text("SELECT 1"))
+        return {"status": "ok", "version": "0.1.0"}
+    except Exception:
+        return JSONResponse(status_code=503, content={"status": "db_unavailable"})
 
 
 # ── Global error handler ──────────────────────────────────────────────────────

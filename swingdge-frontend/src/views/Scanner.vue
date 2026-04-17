@@ -147,6 +147,9 @@
             <span v-for="s in c.signals" :key="s" class="signal-tag" :title="signalExplain(s)">{{ formatSignal(s) }}</span>
           </div>
 
+          <!-- Plain-English Insight -->
+          <div class="candidate-insight">{{ candidateInsight(c) }}</div>
+
           <!-- Notes -->
           <p v-if="c.notes" class="candidate-notes">{{ c.notes }}</p>
         </div>
@@ -186,7 +189,7 @@ const error = ref(null)
 const signalFilter = ref(null)
 const selectedDate = ref(todayStr())
 const dots = ref('')
-const tickerCount = 56
+const tickerCount = ref(56)  // updated from API after scan
 
 let dotInterval
 
@@ -234,6 +237,7 @@ async function runScan() {
     const res = await scannerApi.runScan()
     const data = res.data
     candidates.value = data.candidates
+    if (data.total_tickers) tickerCount.value = data.total_tickers
     lastMeta.value = {
       candidates_found: data.candidates_found,
       scan_date: data.scan_date,
@@ -294,6 +298,51 @@ function formatSignal(type) {
     COMBO: 'Combo',
   }
   return map[type] || type
+}
+
+function candidateInsight(c) {
+  const parts = []
+  const rsi = c.rsi_14 != null ? c.rsi_14.toFixed(0) : null
+  const vol = c.volume_ratio != null ? c.volume_ratio.toFixed(1) : null
+  const rs = c.relative_strength != null ? c.relative_strength.toFixed(1) : null
+
+  // Lead sentence based on signal type
+  if (c.signal_type === 'RSI_PULLBACK') {
+    parts.push(`${c.ticker} pulled back to RSI ${rsi ?? '—'} while holding above its 50-day average — a classic buy-the-dip setup in an existing uptrend.`)
+  } else if (c.signal_type === 'RSI_REVERSAL') {
+    parts.push(`${c.ticker} bounced from oversold territory (RSI ${rsi ?? '—'}) — price may have found a short-term low. Best used as a quick bounce trade, not a trend continuation.`)
+  } else if (c.signal_type === 'MACD_CROSSOVER') {
+    parts.push(`${c.ticker}'s momentum just flipped bullish — the MACD histogram turned positive, signalling a shift from sellers to buyers.`)
+  } else if (c.signal_type === 'EMA_CROSSOVER') {
+    parts.push(`${c.ticker}'s short-term trend turned bullish: the 9-day EMA crossed above the 21-day EMA, which often precedes a continuation move.`)
+  } else if (c.signal_type === 'BB_BOUNCE') {
+    parts.push(`${c.ticker} is trading near its lower Bollinger Band — statistically oversold. The typical target is a rebound to the midline (~20-day average).`)
+  } else if (c.signal_type === 'VOLUME_BREAKOUT') {
+    parts.push(`${c.ticker} is breaking out above key moving averages on ${vol ?? '—'}× normal volume — heavy volume breakouts have the highest follow-through rate.`)
+  } else if (c.signal_type === 'COMBO') {
+    parts.push(`${c.ticker} fired multiple signals at once — a combo setup has higher historical reliability than a single signal alone.`)
+  }
+
+  // Volume context
+  if (vol && parseFloat(vol) >= 2.0) {
+    parts.push(`Volume is ${vol}× the 20-day average, confirming there is real buying interest behind this move.`)
+  }
+
+  // Relative strength
+  if (rs && parseFloat(rs) > 3) {
+    parts.push(`It is outperforming the TSX by ${rs}% over the last 20 days — a sign of sector or stock-specific strength.`)
+  } else if (rs && parseFloat(rs) < -3) {
+    parts.push(`It is underperforming the TSX by ${Math.abs(parseFloat(rs)).toFixed(1)}% — be cautious, relative weakness can persist.`)
+  }
+
+  // Earnings caution
+  if (c.earnings_days_away != null && c.earnings_days_away <= 5) {
+    parts.push(`⚠ Earnings in ${c.earnings_days_away} days — inside the blackout window. Do not enter a new position.`)
+  } else if (c.earnings_days_away != null && c.earnings_days_away <= 10) {
+    parts.push(`Earnings in ${c.earnings_days_away} days — any trade must close before then.`)
+  }
+
+  return parts.join(' ')
 }
 
 function signalExplain(type) {
@@ -517,6 +566,17 @@ onMounted(() => loadResults())
 }
 
 /* Notes */
+.candidate-insight {
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.6;
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-card));
+  border-left: 2px solid var(--accent);
+  border-radius: 0 6px 6px 0;
+  padding: 8px 10px;
+  margin-top: 4px;
+}
+
 .candidate-notes {
   font-size: 12px;
   color: var(--text-muted);

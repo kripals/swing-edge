@@ -46,6 +46,8 @@ async def log_trade_close(db: AsyncSession, plan: TradePlan) -> TradeHistory | N
         exit_price = float(plan.stop_loss) if plan.status == "stopped" else float(plan.target_2)
 
     entry_price = (float(plan.entry_low) + float(plan.entry_high)) / 2
+    if plan.position_size_shares is None:
+        return None  # can't log a trade with no position size
     shares = float(plan.position_size_shares)
 
     # Gross P&L in trade currency

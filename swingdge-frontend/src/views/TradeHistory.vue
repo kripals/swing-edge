@@ -50,6 +50,36 @@
           </div>
           <div class="stat-label">Total P&amp;L</div>
         </div>
+        <div class="stat" v-if="stats.wins > 0">
+          <div class="stat-val positive">+${{ stats.avgWin.toFixed(0) }}</div>
+          <div class="stat-label">Avg Win</div>
+        </div>
+        <div class="stat" v-if="stats.losses > 0">
+          <div class="stat-val negative">-${{ stats.avgLoss.toFixed(0) }}</div>
+          <div class="stat-label">Avg Loss</div>
+        </div>
+        <div class="stat" v-if="stats.wins > 0 && stats.losses > 0">
+          <div class="stat-val" :class="stats.expectancy >= 0 ? 'positive' : 'negative'" :title="'Expected profit per trade = (win rate × avg win) − (loss rate × avg loss). Positive means your system is profitable over time.'">
+            {{ stats.expectancy >= 0 ? '+' : '' }}${{ stats.expectancy.toFixed(0) }}
+          </div>
+          <div class="stat-label">Expectancy</div>
+        </div>
+      </div>
+
+      <!-- Interpretation -->
+      <div v-if="stats.total >= 3" class="interpretation card">
+        <p class="interp-line" v-if="stats.expectancy > 0">
+          Your system has positive expectancy — on average, each trade earns you ${{ stats.expectancy.toFixed(2) }}. Keep following the rules.
+        </p>
+        <p class="interp-line" v-else-if="stats.expectancy < 0">
+          Your system has negative expectancy right now. Your losses (${{ stats.avgLoss.toFixed(0) }} avg) are outpacing your wins (${{ stats.avgWin.toFixed(0) }} avg). Review your stop placement.
+        </p>
+        <p class="interp-line" v-if="stats.winRate < 40 && stats.wins > 0">
+          Win rate of {{ stats.winRate }}% is low, but with a 2:1 reward/risk target you only need 34%+ to be profitable — focus on letting winners run to T2.
+        </p>
+        <p class="interp-line" v-if="stats.winRate >= 60">
+          Strong {{ stats.winRate }}% win rate. Make sure you're also hitting T2 targets and not exiting early.
+        </p>
       </div>
 
       <!-- Equity curve -->
@@ -178,11 +208,17 @@ async function load() {
 
 const stats = computed(() => {
   const closed = trades.value.filter((t) => t.actual_pnl != null)
-  const wins = closed.filter((t) => t.actual_pnl > 0).length
-  const losses = closed.filter((t) => t.actual_pnl <= 0).length
+  const winTrades = closed.filter((t) => t.actual_pnl > 0)
+  const lossTrades = closed.filter((t) => t.actual_pnl <= 0)
+  const wins = winTrades.length
+  const losses = lossTrades.length
   const totalPnl = closed.reduce((sum, t) => sum + t.actual_pnl, 0)
   const winRate = closed.length > 0 ? Math.round((wins / closed.length) * 100) : 0
-  return { total: trades.value.length, wins, losses, winRate, totalPnl }
+  const avgWin = wins > 0 ? winTrades.reduce((s, t) => s + t.actual_pnl, 0) / wins : 0
+  const avgLoss = losses > 0 ? Math.abs(lossTrades.reduce((s, t) => s + t.actual_pnl, 0) / losses) : 0
+  const wr = closed.length > 0 ? wins / closed.length : 0
+  const expectancy = (wr * avgWin) - ((1 - wr) * avgLoss)
+  return { total: trades.value.length, wins, losses, winRate, totalPnl, avgWin, avgLoss, expectancy }
 })
 
 // ── Equity curve ─────────────────────────────────────────────────────────────
@@ -328,12 +364,21 @@ onMounted(load)
 .empty-state .sub { font-size: 13px; color: var(--text-muted); margin-top: 6px; }
 .retry-btn { margin-top: 12px; background: var(--border); color: var(--text); border: none; padding: 6px 16px; border-radius: 6px; cursor: pointer; }
 
+/* Interpretation */
+.interpretation {
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-card));
+  border-color: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.interp-line { font-size: 13px; color: var(--text); line-height: 1.6; margin: 0; }
+.interp-line + .interp-line { margin-top: 6px; }
+
 /* Summary strip */
 .summary-strip {
   display: flex;
   gap: 0;
   padding: 0;
   overflow: hidden;
+  flex-wrap: wrap;
 }
 .stat {
   flex: 1;

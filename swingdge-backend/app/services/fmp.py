@@ -24,6 +24,42 @@ settings = get_settings()
 _BASE = "https://financialmodelingprep.com/api/v3"
 _TIMEOUT = 10.0
 
+# ── Daily quota tracker ───────────────────────────────────────────────────────
+
+_quota_count: int = 0
+_quota_date: str = ""
+_DAILY_LIMIT = 250
+_WARN_THRESHOLD = 200  # 80% of daily limit
+
+
+def _increment_quota() -> None:
+    """Increment daily call counter, resetting at midnight UTC."""
+    global _quota_count, _quota_date
+    from datetime import datetime, timezone
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if _quota_date != today:
+        _quota_count = 0
+        _quota_date = today
+    _quota_count += 1
+
+
+async def _check_quota_warning() -> None:
+    """Send a Telegram warning once when usage crosses 80% of daily limit."""
+    if _quota_count == _WARN_THRESHOLD:
+        import logging
+        logging.getLogger(__name__).warning(
+            "FMP quota at %d/%d (80%%) — approaching daily limit", _quota_count, _DAILY_LIMIT
+        )
+        try:
+            from app.services import telegram as tg
+            await tg.send_message(
+                f"⚠️ <b>FMP quota warning</b>\n"
+                f"Used {_quota_count}/{_DAILY_LIMIT} requests today (80%).\n"
+                f"Earnings and fundamentals data may stop updating."
+            )
+        except Exception:
+            pass
+
 
 def _fmp_symbol(ticker: str) -> str:
     """Convert 'SU.TO' → 'SU.TO' (FMP accepts .TO natively for TSX)."""
@@ -31,6 +67,8 @@ def _fmp_symbol(ticker: str) -> str:
 
 
 async def _get(endpoint: str, params: dict[str, Any] | None = None) -> Any:
+    _increment_quota()
+    await _check_quota_warning()
     p = {"apikey": settings.fmp_key}
     if params:
         p.update(params)

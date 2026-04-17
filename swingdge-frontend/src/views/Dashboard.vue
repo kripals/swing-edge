@@ -27,6 +27,11 @@
         </button>
       </div>
 
+      <!-- Portfolio Snapshot -->
+      <div class="snapshot-card card">
+        <p v-for="(line, i) in snapshotLines" :key="i" class="snapshot-line">{{ line }}</p>
+      </div>
+
       <!-- Flags / Warnings -->
       <div v-if="store.flags.length" class="flags-row">
         <div v-for="flag in store.flags" :key="flag" class="flag">
@@ -109,7 +114,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { usePortfolioStore } from '../stores/portfolio'
 import RiskGauge from '../components/RiskGauge.vue'
 import InfoTooltip from '../components/InfoTooltip.vue'
@@ -131,6 +136,51 @@ onMounted(async () => {
   await store.fetchSummary()
   clearInterval(dotInterval)
   slowLoad.value = false
+})
+
+onUnmounted(() => clearInterval(dotInterval))
+
+const snapshotLines = computed(() => {
+  if (!store.summary) return []
+  const lines = []
+  const holdings = store.allHoldings
+  const pnl = store.totalPnl
+  const pnlPct = store.totalPnlPct
+
+  // Overall direction
+  const dir = pnl >= 0 ? 'up' : 'down'
+  const absPnl = store.formatCad(Math.abs(pnl))
+  const absPct = Math.abs(pnlPct).toFixed(2)
+  lines.push(`Your portfolio is ${dir} ${absPnl} (${absPct}%) in total unrealized ${pnl >= 0 ? 'gains' : 'losses'}.`)
+
+  // Holdings breakdown
+  if (holdings.length > 0) {
+    const green = holdings.filter(h => h.unrealized_pnl_pct > 0).length
+    const red = holdings.filter(h => h.unrealized_pnl_pct < 0).length
+    const sorted = [...holdings].sort((a, b) => b.unrealized_pnl_pct - a.unrealized_pnl_pct)
+    const best = sorted[0]
+    const worst = sorted[sorted.length - 1]
+    let line = `${green} of ${holdings.length} holdings are profitable`
+    if (red > 0) line += `, ${red} are in the red`
+    if (best && worst && best !== worst) {
+      line += `. Best: ${best.ticker} (${best.unrealized_pnl_pct > 0 ? '+' : ''}${best.unrealized_pnl_pct.toFixed(1)}%), worst: ${worst.ticker} (${worst.unrealized_pnl_pct.toFixed(1)}%)`
+    }
+    lines.push(line + '.')
+  }
+
+  // Concentration warnings
+  const sectorFlags = store.flags.filter(f => f.startsWith('SECTOR_OVERWEIGHT'))
+  if (sectorFlags.length) {
+    const sectors = sectorFlags.map(f => f.split(':')[1]).join(' and ')
+    lines.push(`Concentration warning: ${sectors} sector${sectorFlags.length > 1 ? 's are' : ' is'} over the 30% limit — consider trimming before adding new positions.`)
+  }
+
+  // Problem holdings
+  if (store.problemHoldings.length > 0) {
+    lines.push(`${store.problemHoldings.length} position${store.problemHoldings.length > 1 ? 's require' : ' requires'} immediate review below.`)
+  }
+
+  return lines
 })
 
 const sortedSectors = computed(() => {
@@ -191,6 +241,10 @@ function formatFlag(flag) {
   cursor: pointer;
   font-size: 13px;
 }
+
+.snapshot-card { background: color-mix(in srgb, var(--accent) 6%, var(--bg-card)); border-color: color-mix(in srgb, var(--accent) 20%, transparent); }
+.snapshot-line { font-size: 13px; color: var(--text); line-height: 1.6; margin: 0; }
+.snapshot-line + .snapshot-line { margin-top: 6px; }
 
 .flags-row { display: flex; flex-wrap: wrap; gap: 8px; }
 

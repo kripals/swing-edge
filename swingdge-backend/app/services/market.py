@@ -139,7 +139,7 @@ async def get_sectors(db: AsyncSession) -> list[SectorPerformance]:
             sector=etf["sector"],
             name=etf["name"],
             price=q.get("price"),
-            change_pct=q.get("percent_change"),
+            change_pct=q.get("change_pct"),
             volume=q.get("volume"),
         ))
 
@@ -201,7 +201,7 @@ async def get_quote_with_context(db: AsyncSession, ticker: str) -> dict:
         "ticker": ticker,
         "price": q.get("price"),
         "change": q.get("change"),
-        "change_pct": q.get("percent_change"),
+        "change_pct": q.get("change_pct"),
         "volume": q.get("volume"),
         "open": fh_quote.get("open") if fh_quote else None,
         "high": fh_quote.get("high") if fh_quote else None,

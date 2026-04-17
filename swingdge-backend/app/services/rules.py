@@ -68,7 +68,7 @@ async def risk_pct(db: AsyncSession) -> float:
     return await get_rule(db, "risk_per_trade_pct", 1.0)
 
 async def min_rr(db: AsyncSession) -> float:
-    return await get_rule(db, "min_risk_reward", 2.0)
+    return await get_rule(db, "min_risk_reward_ratio", 2.0)
 
 async def earnings_blackout_days(db: AsyncSession) -> int:
     return await get_rule(db, "earnings_blackout_days", 5)
@@ -80,16 +80,16 @@ async def trade_expiry_days(db: AsyncSession) -> int:
     return await get_rule(db, "trade_expiry_days", 10)
 
 async def min_market_cap(db: AsyncSession) -> float:
-    return await get_rule(db, "scanner_min_market_cap", 2_000_000_000)
+    return await get_rule(db, "scanner_min_market_cap_cad", 2_000_000_000)
 
 async def scanner_rsi_oversold(db: AsyncSession) -> int:
-    return await get_rule(db, "scanner_rsi_oversold", 30)
+    return await get_rule(db, "scanner_rsi_min", 30)
 
 async def scanner_rsi_upper(db: AsyncSession) -> int:
-    return await get_rule(db, "scanner_rsi_upper_bound", 50)
+    return await get_rule(db, "scanner_rsi_max", 50)
 
 async def scanner_volume_multiplier(db: AsyncSession) -> float:
-    return await get_rule(db, "scanner_volume_multiplier", 1.5)
+    return await get_rule(db, "scanner_volume_ratio_min", 1.5)
 
 async def scanner_min_price(db: AsyncSession) -> float:
     return await get_rule(db, "scanner_min_price", 2.0)
@@ -98,13 +98,13 @@ async def scanner_min_avg_volume(db: AsyncSession) -> int:
     return await get_rule(db, "scanner_min_avg_volume", 100_000)
 
 async def max_sector_pct(db: AsyncSession) -> float:
-    return await get_rule(db, "max_sector_exposure_pct", 30.0)
+    return await get_rule(db, "max_sector_pct", 30.0)
 
 async def max_position_pct(db: AsyncSession) -> float:
-    return await get_rule(db, "max_position_size_pct", 15.0)
+    return await get_rule(db, "max_position_pct", 15.0)
 
 async def fx_fee_pct(db: AsyncSession) -> float:
-    return await get_rule(db, "fx_fee_per_conversion_pct", 1.5)
+    return await get_rule(db, "fx_fee_pct", 1.5)
 
 async def has_usd_account(db: AsyncSession) -> bool:
     return await get_rule(db, "has_usd_account", False)

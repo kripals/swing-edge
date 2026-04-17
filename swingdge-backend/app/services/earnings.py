@@ -22,11 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.services import cache as cache_svc
+from app.services import fmp as fmp_svc
 from app.services import rules as rules_svc
 
 settings = get_settings()
 
-_FMP_BASE = "https://financialmodelingprep.com/api"
 _FINNHUB_BASE = "https://finnhub.io/api/v1"
 _TIMEOUT = 10.0
 
@@ -61,19 +61,14 @@ async def get_next_earnings_date(db: AsyncSession, ticker: str) -> date | None:
 async def _fetch_fmp(ticker: str) -> date | None:
     try:
         today = date.today().isoformat()
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.get(
-                f"{_FMP_BASE}/v3/earning_calendar",
-                params={"symbol": ticker, "apikey": settings.fmp_key},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            if not isinstance(data, list):
-                return None
-            for row in data:
-                d = row.get("date", "")
-                if d >= today:
-                    return date.fromisoformat(d)
+        # Route through fmp_svc._get() so the quota counter is incremented
+        data = await fmp_svc._get(f"earning_calendar", {"symbol": ticker})
+        if not isinstance(data, list):
+            return None
+        for row in data:
+            d = row.get("date", "")
+            if d >= today:
+                return date.fromisoformat(d)
     except Exception:
         pass
     return None
