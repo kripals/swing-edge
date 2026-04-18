@@ -104,7 +104,10 @@
                   Vol {{ r.volume_ratio.toFixed(1) }}x
                 </span>
               </div>
-              <div class="row-reason">{{ r.reason }}</div>
+              <div class="row-reason">
+                <span class="reason-simple">{{ r.simple_reason }}</span>
+                <span class="reason-technical">{{ r.reason }}</span>
+              </div>
             </div>
           </template>
 
@@ -144,7 +147,10 @@
                     Vol {{ r.volume_ratio.toFixed(1) }}x
                   </span>
                 </div>
-                <div class="row-reason">{{ r.reason }}</div>
+                <div class="row-reason">
+                <span class="reason-simple">{{ r.simple_reason }}</span>
+                <span class="reason-technical">{{ r.reason }}</span>
+              </div>
               </div>
             </template>
           </div>
@@ -177,7 +183,10 @@
                   Vol {{ r.volume_ratio.toFixed(1) }}x
                 </span>
               </div>
-              <div class="row-reason">{{ r.reason }}</div>
+              <div class="row-reason">
+                <span class="reason-simple">{{ r.simple_reason }}</span>
+                <span class="reason-technical">{{ r.reason }}</span>
+              </div>
             </div>
           </template>
         </div>
@@ -399,7 +408,16 @@ function formatFlag(flag) {
   color: var(--text-muted);
 }
 .row-reason {
-  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.reason-simple {
+  font-size: 13px;
+  color: var(--text);
+}
+.reason-technical {
+  font-size: 11px;
   color: var(--text-muted);
 }
 

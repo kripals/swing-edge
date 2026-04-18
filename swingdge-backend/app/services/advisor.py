@@ -39,6 +39,7 @@ class AdvisorResult:
     ticker: str
     account_name: str
     action: str                     # 'SELL' | 'WATCH' | 'HOLD' | 'LEVERAGED_ETF'
+    simple_reason: str              # plain-English summary for non-technical users
     reason: str
     unrealized_pnl_pct: float       # raw (before FX adjustment)
     fx_adjusted_pnl_pct: float      # after 3% round-trip deduction for US holdings
@@ -153,27 +154,35 @@ async def analyze_holdings(db: AsyncSession) -> list[AdvisorResult]:
         # 6. Decision logic
         if is_leveraged:
             action = "LEVERAGED_ETF"
+            simple_reason = f"This is a high-risk leveraged fund. You're up {raw_pnl_pct:+.1f}% — consider if you still want to hold it."
             reason = f"Leveraged ETF — standard thresholds don't apply. P&L: {raw_pnl_pct:+.1f}%"
         elif earnings_in_blackout and earnings_days_away is not None and earnings_days_away <= 5:
             action = "SELL"
+            simple_reason = f"This company reports earnings in {earnings_days_away} day{'s' if earnings_days_away != 1 else ''}. Earnings can cause big price swings — consider selling before then."
             reason = f"Earnings in {earnings_days_away}d — within blackout window, consider reducing position"
         elif adj_pnl_pct <= -15 and rsi is not None and float(rsi) < 45 and above_sma_50 is False:
             action = "SELL"
+            simple_reason = f"This position is down {abs(adj_pnl_pct):.0f}% and the stock is losing momentum. The trend has turned against you — it may be time to cut your losses."
             reason = f"Trend broken: {adj_pnl_pct:+.1f}% P&L, RSI {float(rsi):.0f}, below SMA-50"
         elif adj_pnl_pct <= -8 and above_sma_50 is False:
             action = "SELL"
+            simple_reason = f"This position is down {abs(adj_pnl_pct):.0f}% and has broken below a key price level. This is a warning sign — consider selling to protect your capital."
             reason = f"Breakdown below SMA-50 with {adj_pnl_pct:+.1f}% P&L — cut loss"
         elif adj_pnl_pct >= 25 and rsi is not None and float(rsi) > 70 and volume_ratio is not None and float(volume_ratio) < 1.0:
             action = "SELL"
+            simple_reason = f"You're up {adj_pnl_pct:.0f}% and the stock looks stretched — buying interest is fading. A good time to take some profit."
             reason = f"Extended: {adj_pnl_pct:+.1f}% P&L, RSI {float(rsi):.0f}, volume fading — consider taking profit"
         elif -15 < adj_pnl_pct < -8 and above_sma_50 is True:
             action = "WATCH"
+            simple_reason = f"This position is down {abs(adj_pnl_pct):.0f}% but still holding above a key support level. Keep an eye on it — if it drops further, you may need to act."
             reason = f"Deteriorating: {adj_pnl_pct:+.1f}% P&L, still above SMA-50 — monitor closely"
         elif adj_pnl_pct >= 15 and rsi is not None and 50 <= float(rsi) <= 70:
             action = "HOLD"
+            simple_reason = f"You're up {adj_pnl_pct:.0f}% and the stock still has healthy momentum. No reason to sell — let it run."
             reason = f"Strong momentum: {adj_pnl_pct:+.1f}% P&L, RSI {float(rsi):.0f} — let it run"
         else:
             action = "HOLD"
+            simple_reason = "Nothing urgent here. Just keep an eye on it as part of your normal review."
             reason = f"No action needed: {adj_pnl_pct:+.1f}% P&L"
 
         flags: list[str] = []
@@ -188,6 +197,7 @@ async def analyze_holdings(db: AsyncSession) -> list[AdvisorResult]:
             ticker=ticker,
             account_name=row.account_name,
             action=action,
+            simple_reason=simple_reason,
             reason=reason,
             unrealized_pnl_pct=round(raw_pnl_pct, 2),
             fx_adjusted_pnl_pct=round(adj_pnl_pct, 2),

@@ -21,6 +21,7 @@ class AdvisorResultSchema(BaseModel):
     ticker: str
     account_name: str
     action: str
+    simple_reason: str
     reason: str
     unrealized_pnl_pct: float
     fx_adjusted_pnl_pct: float
@@ -62,6 +63,7 @@ async def get_advisor_results(db: AsyncSession = Depends(get_db)) -> AdvisorResp
                 ticker=r.ticker,
                 account_name=r.account_name,
                 action=r.action,
+                simple_reason=r.simple_reason,
                 reason=r.reason,
                 unrealized_pnl_pct=r.unrealized_pnl_pct,
                 fx_adjusted_pnl_pct=r.fx_adjusted_pnl_pct,
