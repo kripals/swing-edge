@@ -276,7 +276,73 @@
 
 ---
 
-## Phase 8 — SaaS Prep (Future / Optional)
+## Phase 8 — Portfolio Advisor
+
+> Goal: daily hold/sell/watch recommendations for each holding based on live technicals and P&L. Separate from the swing scanner — this covers positions you already own.
+
+### Backend
+
+- [x] Create `services/advisor.py` — `AdvisorResult` dataclass + `analyze_holdings(db)` function
+  - Load holdings from DB (reuse portfolio.py query pattern)
+  - Fetch live quotes via `twelve_data.get_batch_quotes()`
+  - Fetch indicators (RSI, SMA-50, EMA) via `twelve_data.get_indicators()`
+  - Compute extras (volume ratio, relative strength) via `indicators.compute_extras()`
+  - Check earnings proximity via `earnings.is_in_blackout()`
+  - Skip leveraged ETFs from standard logic (flag SOXL and any 2x/3x ETFs separately — thresholds don't apply)
+  - Apply FX-adjusted P&L for US-listed holdings (subtract 3% round-trip cost before threshold checks)
+  - Apply decision logic per holding:
+    - **SELL** — unrealized P&L ≤ −15% AND RSI < 45 AND below SMA-50 (trend broken)
+    - **SELL** — unrealized P&L ≤ −8% AND price crossed below SMA-50 (breakdown)
+    - **SELL** — unrealized P&L ≥ +25% AND RSI > 70 AND volume ratio dropping (extended)
+    - **SELL** — earnings within 5 days (blackout — consider reducing)
+    - **WATCH** — unrealized P&L −8% to −15%, still above SMA-50 (deteriorating)
+    - **HOLD** — unrealized P&L ≥ +15%, RSI 50–70, momentum healthy (let it run)
+    - **HOLD** — everything else (no action needed)
+  - Return list of `AdvisorResult` (ticker, action, reason, key metrics, fx_adjusted_pnl_pct)
+
+- [x] Add `GET /api/advisor/results` endpoint to a new `app/api/advisor.py` router
+  - Calls `advisor.analyze_holdings(db)` and returns full results list
+  - Used by frontend to display advisor panel
+  - Register router in `main.py`
+
+- [x] Add `portfolio-advisor` trigger endpoint to `triggers.py`
+  - Calls `advisor.analyze_holdings(db)`
+  - Sends Telegram message via `tg.fmt_portfolio_advice()`
+  - Returns summary count of SELL / WATCH / HOLD
+  - Add `portfolio-advisor` to the `workflow_dispatch` job options list in `market-monitor.yml`
+
+- [x] Add `fmt_portfolio_advice(results)` formatter to `telegram.py`
+  - Groups by action: SELL first, then WATCH, then HOLD
+  - Shows ticker, FX-adjusted P&L%, action, and one-line reason per holding
+  - Flags leveraged ETFs with a ⚠️ note
+  - Adds cooldown: `portfolio_advice` type, 12h (once per half-day)
+
+- [x] Add `portfolio-advisor` job to `.github/workflows/market-monitor.yml`
+  - Runs daily at 4:02 PM ET (`2 20 * * 1-5`) before daily-summary at 4:45 PM (shifted 2 min to avoid cron collision with price-check)
+  - Add to `workflow_dispatch` options list
+  - Includes Wake Render retry step + Telegram failure notification (same pattern as other jobs)
+
+### Frontend
+
+- [x] Add Advisor panel to Portfolio view (`Portfolio.vue`)
+  - Calls `GET /api/advisor/results` on page load
+  - Shows each holding as a row: ticker | P&L% (FX-adjusted for US) | action chip (SELL=red, WATCH=amber, HOLD=green) | one-line reason
+  - Flag leveraged ETFs with a ⚠️ badge instead of standard action chip
+  - Collapse HOLD rows by default — expand on tap (keeps UI clean)
+  - Show last-run timestamp at top of panel
+
+### Testing & Validation
+
+- [ ] Test `analyze_holdings()` against seeded holdings — confirm correct action assignment
+- [ ] Confirm FX adjustment applies only to US-listed holdings (non-.TO tickers)
+- [ ] Confirm SOXL and leveraged ETFs are excluded from standard thresholds
+- [ ] Verify Telegram message formatting with mixed SELL/WATCH/HOLD portfolio
+- [ ] Confirm cooldown prevents duplicate alerts within same day
+- [ ] Dry-run `portfolio-advisor` via `workflow_dispatch` — confirm Telegram message received
+
+---
+
+## Phase 9 — SaaS Prep (Future / Optional)
 
 - [ ] Upgrade Render → Railway Hobby ($5/mo) for always-on + APScheduler
 - [ ] Multi-user auth (Supabase Auth or Clerk)

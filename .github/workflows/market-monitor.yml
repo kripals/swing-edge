@@ -15,6 +15,9 @@ on:
     - cron: '0,15,30,45 14-19 * * 1-5'   # price-check
     - cron: '0 20 * * 1-5'               # price-check at 4:00 PM ET
 
+    # 4:02 PM ET → 20:02 UTC (2 min after market close, avoids collision with price-check)
+    - cron: '2 20 * * 1-5'    # portfolio-advisor (before portfolio-snapshot + daily-summary)
+
     # 4:15 PM ET → 20:15 UTC
     - cron: '15 20 * * 1-5'   # portfolio-snapshot (before daily-summary)
 
@@ -59,6 +62,7 @@ on:
           - cache-cleanup
           - ticker-discovery
           - momentum-watchlist
+          - portfolio-advisor
 
 jobs:
   # ── Earnings check — 8:00 AM ET weekdays ──────────────────────────────────
@@ -399,3 +403,33 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d text="⚠️ SwingEdge job failed: momentum-watchlist"
+
+  # ── Portfolio advisor — 4:02 PM ET weekdays ──────────────────────────────────
+  portfolio-advisor:
+    if: >
+      github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'portfolio-advisor' ||
+      github.event_name == 'schedule' && github.event.schedule == '2 20 * * 1-5'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake Render
+        run: |
+          for i in 1 2 3; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${{ secrets.RENDER_API_URL }}/health")
+            [ "$STATUS" = "200" ] && break
+            sleep 20
+          done
+          true
+
+      - name: Trigger portfolio-advisor
+        run: |
+          curl -s -f --max-time 60 \
+            -X POST "${{ secrets.RENDER_API_URL }}/api/trigger/portfolio-advisor" \
+            -H "Authorization: Bearer ${{ secrets.TRIGGER_SECRET }}" \
+            -H "Content-Type: application/json"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="⚠️ SwingEdge job failed: portfolio-advisor"

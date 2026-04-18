@@ -83,3 +83,8 @@ export const alertsApi = {
   getAlerts: (type) => api.get('/alerts', { params: type ? { alert_type: type } : {} }),
   sendTest: () => api.post('/alerts/test'),
 }
+
+// ── Portfolio Advisor (Phase 8) ───────────────────────────────────────────────
+export const advisorApi = {
+  getResults: () => api.get('/advisor/results'),
+}

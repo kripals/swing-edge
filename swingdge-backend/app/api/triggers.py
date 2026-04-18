@@ -14,6 +14,7 @@ Scheduled jobs:
   portfolio-snapshot  → 4:15 PM ET  — write daily portfolio value to market_snapshots
   ticker-discovery    → weekly Sun  — sync TSX screener, permanently add new tickers
   momentum-watchlist  → daily       — add today's TSX gainers for 7-day temporary scan
+  portfolio-advisor   → 4:00 PM ET  — HOLD/WATCH/SELL recommendations for existing holdings
 """
 from __future__ import annotations
 
@@ -721,3 +722,35 @@ async def trigger_momentum_watchlist(
         return f"Momentum watchlist: added {added} temporary tickers (expire {expires.date()})"
 
     return await _run_timed("momentum-watchlist", _job())
+
+
+# ── portfolio-advisor ─────────────────────────────────────────────────────────
+
+@router.post("/portfolio-advisor")
+async def trigger_portfolio_advisor(
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> TriggerResult:
+    """
+    Daily job (4:00 PM ET): analyze all holdings and send HOLD/WATCH/SELL recommendations via Telegram.
+    Runs before daily-summary (4:45 PM ET) so advice is fresh when the summary arrives.
+    """
+    verify_trigger_secret(authorization)
+
+    async def _job():
+        from app.services import advisor as advisor_svc
+        from app.services import telegram as tg
+
+        results = await advisor_svc.analyze_holdings(db)
+        if not results:
+            return "No holdings to analyze"
+
+        message = tg.fmt_portfolio_advice(results)
+        await tg.send_alert(db, "portfolio_advice", message, priority="medium")
+
+        sell_count = sum(1 for r in results if r.action == "SELL")
+        watch_count = sum(1 for r in results if r.action == "WATCH")
+        hold_count = sum(1 for r in results if r.action == "HOLD")
+        return f"Portfolio advice sent: {sell_count} SELL, {watch_count} WATCH, {hold_count} HOLD"
+
+    return await _run_timed("portfolio-advisor", _job())

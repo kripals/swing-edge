@@ -51,6 +51,7 @@ COOLDOWNS: dict[str, int] = {
     "daily_summary":    12 * 3600,
     "morning_briefing": 12 * 3600,
     "scan_complete":    4 * 3600,
+    "portfolio_advice": 12 * 3600,
 }
 
 _TELEGRAM_BASE = "https://api.telegram.org/bot{token}/sendMessage"
@@ -245,6 +246,46 @@ def fmt_daily_summary(
         f"Scan candidates: {candidates_today}\n"
         f"Alerts sent:     {alerts_today}"
     )
+
+
+def fmt_portfolio_advice(results: list) -> str:
+    """
+    Format HOLD/WATCH/SELL recommendations as a Telegram message.
+    Groups by action: SELL first, then WATCH, then HOLD, then LEVERAGED_ETF.
+    results: list of AdvisorResult dataclass instances.
+    """
+    sell = [r for r in results if r.action == "SELL"]
+    watch = [r for r in results if r.action == "WATCH"]
+    hold = [r for r in results if r.action == "HOLD"]
+    leveraged = [r for r in results if r.action == "LEVERAGED_ETF"]
+
+    lines = ["📋 <b>Portfolio Advisor</b>"]
+
+    if sell:
+        lines.append("\n🔴 <b>SELL</b>")
+        for r in sell:
+            fx_note = f" (FX-adj)" if r.has_fx_cost else ""
+            earn_note = f" ⚡ Earnings {r.earnings_days_away}d" if r.earnings_days_away is not None and r.earnings_days_away <= 5 else ""
+            lines.append(f"  <b>{r.ticker}</b> {r.fx_adjusted_pnl_pct:+.1f}%{fx_note}{earn_note}\n  ↳ {r.reason}")
+
+    if watch:
+        lines.append("\n🟡 <b>WATCH</b>")
+        for r in watch:
+            fx_note = f" (FX-adj)" if r.has_fx_cost else ""
+            lines.append(f"  <b>{r.ticker}</b> {r.fx_adjusted_pnl_pct:+.1f}%{fx_note}\n  ↳ {r.reason}")
+
+    if hold:
+        lines.append("\n🟢 <b>HOLD</b>")
+        for r in hold:
+            lines.append(f"  <b>{r.ticker}</b> {r.fx_adjusted_pnl_pct:+.1f}% — {r.reason}")
+
+    if leveraged:
+        lines.append("\n⚠️ <b>LEVERAGED ETF</b>")
+        for r in leveraged:
+            lines.append(f"  <b>{r.ticker}</b> {r.unrealized_pnl_pct:+.1f}% — {r.reason}")
+
+    lines.append(f"\n{len(sell)} SELL · {len(watch)} WATCH · {len(hold)} HOLD")
+    return "\n".join(lines)
 
 
 def fmt_macro_update(overnight_rate: str, usd_cad: str, wti: str, gold: str) -> str:
