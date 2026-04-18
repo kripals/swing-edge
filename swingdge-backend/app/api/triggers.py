@@ -3,14 +3,17 @@ Trigger endpoints — called by GitHub Actions cron workflows.
 All require Authorization: Bearer <TRIGGER_SECRET> header.
 
 Scheduled jobs:
-  morning-scan    → 9:45 AM ET  — full scanner pipeline + Telegram briefing
-  price-check     → every 15min — check active trades vs entry/stop/target
-  daily-summary   → 4:45 PM ET  — Telegram EOD digest
-  macro-update    → 6:00 PM ET  — warm BoC + commodities cache
-  earnings-check  → 8:00 AM ET  — warn about holdings with earnings this week
-  portfolio-sync  → 2x daily    — SnapTrade sync
-  sector-update   → 4:30 PM ET  — warm sector ETF cache
-  cache-cleanup   → daily       — purge expired cache rows
+  morning-scan        → 9:45 AM ET  — full scanner pipeline + Telegram briefing
+  price-check         → every 15min — check active trades vs entry/stop/target
+  daily-summary       → 4:45 PM ET  — Telegram EOD digest
+  macro-update        → 6:00 PM ET  — warm BoC + commodities cache
+  earnings-check      → 8:00 AM ET  — warn about holdings with earnings this week
+  portfolio-sync      → 2x daily    — SnapTrade sync
+  sector-update       → 4:30 PM ET  — warm sector ETF cache
+  cache-cleanup       → daily       — purge expired cache rows + deactivate expired tickers
+  portfolio-snapshot  → 4:15 PM ET  — write daily portfolio value to market_snapshots
+  ticker-discovery    → weekly Sun  — sync TSX screener, permanently add new tickers
+  momentum-watchlist  → daily       — add today's TSX gainers for 7-day temporary scan
 """
 from __future__ import annotations
 
@@ -27,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db, AsyncSessionLocal
 from app.utils.auth import verify_trigger_secret
 from app.services import cache as cache_svc
+from app.models.ticker import Ticker
 
 router = APIRouter(prefix="/api/trigger", tags=["triggers"])
 
@@ -100,6 +104,8 @@ async def _morning_scan_bg() -> None:
                     above_sma_50=c.above_sma_50,
                     atr_14=c.atr_14,
                     relative_strength=c.relative_strength,
+                    high_52w=c.high_52w,
+                    adx_14=c.adx_14,
                     sector=c.sector,
                     notes=c.notes,
                 )
@@ -296,16 +302,31 @@ async def trigger_daily_summary(
         from app.models.trade_plan import TradePlan
         from app.models.scan_result import ScanResult
         from app.models.alert import Alert
+        from app.models.market_snapshot import MarketSnapshot
+        from datetime import timedelta
 
         today = date.today()
+        yesterday = today - timedelta(days=1)
 
         # Portfolio value
         try:
             summary = await portfolio_svc.get_portfolio_summary(db)
             total_value = summary.total_value_cad
-            # No stored previous-day prices — report total unrealized P&L (since purchase), not daily move
-            total_pnl = summary.total_unrealized_pnl
-            total_pnl_pct = (total_pnl / (total_value - total_pnl) * 100) if (total_value - total_pnl) else 0.0
+
+            # Try to get yesterday's snapshot for true daily change
+            yesterday_snap = await db.execute(
+                select(MarketSnapshot).where(MarketSnapshot.date == yesterday)
+            )
+            yesterday_row = yesterday_snap.scalar_one_or_none()
+
+            if yesterday_row and yesterday_row.portfolio_value_cad:
+                # True daily change vs yesterday's close
+                total_pnl = total_value - float(yesterday_row.portfolio_value_cad)
+                total_pnl_pct = (total_pnl / float(yesterday_row.portfolio_value_cad) * 100) if yesterday_row.portfolio_value_cad else 0.0
+            else:
+                # Fallback: report total unrealized P&L (since purchase)
+                total_pnl = summary.total_unrealized_pnl
+                total_pnl_pct = (total_pnl / (total_value - total_pnl) * 100) if (total_value - total_pnl) else 0.0
         except Exception:
             total_value = 0.0
             total_pnl = 0.0
@@ -472,6 +493,70 @@ async def trigger_sector_update(
     return await _run_timed("sector-update", _job())
 
 
+# ── portfolio-snapshot ────────────────────────────────────────────────────────
+
+@router.post("/portfolio-snapshot")
+async def trigger_portfolio_snapshot(
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> TriggerResult:
+    """
+    Write today's total portfolio value to market_snapshots table.
+    Run at 4:15 PM ET (after market close, before daily-summary at 4:45 PM).
+    Enables true daily P&L diff in daily-summary (today vs yesterday snapshot).
+    """
+    verify_trigger_secret(authorization)
+
+    async def _job():
+        from app.services import portfolio as portfolio_svc
+        from app.services import market as market_svc
+        from app.models.market_snapshot import MarketSnapshot
+
+        today = date.today()
+
+        # Get portfolio value
+        summary = await portfolio_svc.get_portfolio_summary(db)
+        total_value = summary.total_value_cad
+
+        # Get macro snapshot values to store alongside (reuse cached data — no new API calls)
+        try:
+            macro = await market_svc.get_macro(db)
+            usd_cad = float(macro.usd_cad["value"]) if macro.usd_cad else None
+            boc_rate = float(macro.overnight_rate["value"]) if macro.overnight_rate else None
+            wti = float(macro.wti_oil["value"]) if macro.wti_oil else None
+            gold = float(macro.gold["value"]) if macro.gold else None
+            nat_gas = float(macro.natural_gas["value"]) if macro.natural_gas else None
+            copper = float(macro.copper["value"]) if macro.copper else None
+            cpi = float(macro.cpi["value"]) if macro.cpi else None
+        except Exception:
+            usd_cad = boc_rate = wti = gold = nat_gas = copper = cpi = None
+
+        # Upsert: update if today's row already exists, insert otherwise
+        existing = await db.execute(
+            select(MarketSnapshot).where(MarketSnapshot.date == today)
+        )
+        snapshot = existing.scalar_one_or_none()
+
+        if snapshot is None:
+            snapshot = MarketSnapshot(date=today)
+            db.add(snapshot)
+
+        snapshot.usd_cad = usd_cad
+        snapshot.boc_rate = boc_rate
+        snapshot.wti_oil = wti
+        snapshot.gold = gold
+        snapshot.nat_gas = nat_gas
+        snapshot.copper = copper
+        snapshot.cpi = cpi
+        snapshot.portfolio_value_cad = total_value
+
+        await db.commit()
+
+        return f"Snapshot saved for {today}: portfolio ${total_value:,.2f} CAD"
+
+    return await _run_timed("portfolio-snapshot", _job())
+
+
 # ── cache-cleanup ─────────────────────────────────────────────────────────────
 
 @router.post("/cache-cleanup")
@@ -482,7 +567,157 @@ async def trigger_cache_cleanup(
     verify_trigger_secret(authorization)
 
     async def _job():
+        # 1. Purge expired API cache rows
         deleted = await cache_svc.cache_cleanup(db)
-        return f"Removed {deleted} expired cache entries"
+
+        # 2. Deactivate dynamic tickers whose 7-day window has expired
+        now = datetime.now(timezone.utc)
+        expired_res = await db.execute(
+            select(Ticker).where(
+                Ticker.expires_at.isnot(None),
+                Ticker.expires_at < now,
+                Ticker.is_active == True,
+            )
+        )
+        expired_tickers = expired_res.scalars().all()
+        for t in expired_tickers:
+            t.is_active = False
+        if expired_tickers:
+            await db.commit()
+
+        return (
+            f"Removed {deleted} expired cache entries; "
+            f"deactivated {len(expired_tickers)} expired dynamic tickers"
+        )
 
     return await _run_timed("cache-cleanup", _job())
+
+
+# ── ticker-discovery ──────────────────────────────────────────────────────────
+
+@router.post("/ticker-discovery")
+async def trigger_ticker_discovery(
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> TriggerResult:
+    """
+    Weekly job (Sunday 6 AM ET): sync TSX screener results into ticker_universe.
+    - Upserts new tickers that meet market cap + volume thresholds (permanent additions).
+    - Deactivates tickers no longer returned by screener and not manually added.
+    """
+    verify_trigger_secret(authorization)
+
+    async def _job():
+        from app.services import fmp as fmp_svc
+        from app.services import telegram as tg
+
+        screener_results = await fmp_svc.get_tsx_screener(db)
+        if not screener_results:
+            return "Screener returned no results — skipping"
+
+        screener_tickers = {r["ticker"] for r in screener_results}
+
+        # Load all existing ticker_universe rows
+        existing_res = await db.execute(select(Ticker))
+        existing = {t.ticker: t for t in existing_res.scalars().all()}
+
+        added = 0
+        deactivated = 0
+
+        for item in screener_results:
+            ticker_sym = item["ticker"]
+            if ticker_sym in existing:
+                # Re-activate if it was previously deactivated by screener
+                row = existing[ticker_sym]
+                if not row.is_active and row.discovery_source == "fmp_screener":
+                    row.is_active = True
+            else:
+                # New ticker — add permanently (no expires_at)
+                new_row = Ticker(
+                    ticker=ticker_sym,
+                    exchange="TSX",
+                    name=item.get("name"),
+                    sector=item.get("sector"),
+                    currency="CAD",
+                    is_etf=False,
+                    is_active=True,
+                    twelve_data_symbol=ticker_sym.replace(".TO", ":TSX") if ticker_sym.endswith(".TO") else ticker_sym,
+                    discovery_source="fmp_screener",
+                )
+                db.add(new_row)
+                added += 1
+
+        # Deactivate screener-sourced tickers no longer in results (delisted guard)
+        for ticker_sym, row in existing.items():
+            if (
+                row.discovery_source == "fmp_screener"
+                and row.is_active
+                and ticker_sym not in screener_tickers
+            ):
+                row.is_active = False
+                deactivated += 1
+
+        await db.commit()
+
+        summary = f"Ticker discovery: +{added} added, -{deactivated} deactivated ({len(screener_tickers)} in screener)"
+        await tg.send_message(f"📊 <b>Ticker Discovery</b>\n{summary}")
+        return summary
+
+    return await _run_timed("ticker-discovery", _job())
+
+
+# ── momentum-watchlist ────────────────────────────────────────────────────────
+
+@router.post("/momentum-watchlist")
+async def trigger_momentum_watchlist(
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> TriggerResult:
+    """
+    Daily job (10:30 AM ET): add today's top TSX gainers as temporary scan candidates.
+    Tickers expire after 7 days and are deactivated by cache-cleanup.
+    Only adds tickers NOT already in ticker_universe.
+    """
+    verify_trigger_secret(authorization)
+
+    async def _job():
+        from app.services import fmp as fmp_svc
+        from datetime import timedelta
+
+        gainers = await fmp_svc.get_tsx_gainers(db)
+        if not gainers:
+            return "No TSX gainers returned today"
+
+        # Load existing tickers to avoid duplicates
+        existing_res = await db.execute(select(Ticker.ticker))
+        existing_symbols = {row[0] for row in existing_res.fetchall()}
+
+        now = datetime.now(timezone.utc)
+        expires = now + timedelta(days=7)
+
+        added = 0
+        for item in gainers:
+            ticker_sym = item["ticker"]
+            if ticker_sym in existing_symbols:
+                continue
+            new_row = Ticker(
+                ticker=ticker_sym,
+                exchange="TSX",
+                name=item.get("name"),
+                sector=None,
+                currency="CAD",
+                is_etf=False,
+                is_active=True,
+                twelve_data_symbol=ticker_sym.replace(".TO", ":TSX") if ticker_sym.endswith(".TO") else ticker_sym,
+                discovery_source="momentum",
+                expires_at=expires,
+            )
+            db.add(new_row)
+            added += 1
+
+        if added:
+            await db.commit()
+
+        return f"Momentum watchlist: added {added} temporary tickers (expire {expires.date()})"
+
+    return await _run_timed("momentum-watchlist", _job())

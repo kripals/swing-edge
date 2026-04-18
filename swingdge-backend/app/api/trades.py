@@ -91,6 +91,7 @@ class TradePlanPreview(BaseModel):
     earnings_days_away: int | None
     signal_type: str | None
     signal_score: float | None
+    pivot_levels: dict | None
     violations: list[str]
 
 

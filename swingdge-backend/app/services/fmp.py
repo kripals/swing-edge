@@ -178,6 +178,83 @@ async def get_analyst_ratings(db: AsyncSession, ticker: str) -> dict | None:
 
 # ── Earnings surprises ────────────────────────────────────────────────────────
 
+async def get_tsx_screener(
+    _db: AsyncSession,
+    min_mktcap: int = 2_000_000_000,
+    min_volume: int = 200_000,
+    limit: int = 100,
+) -> list[dict]:
+    """
+    Fetch TSX-listed stocks from FMP stock screener.
+    Returns list of {ticker, name, sector, exchange, market_cap, avg_volume, currency}.
+    Not cached — called weekly by ticker-discovery trigger (1 FMP credit per call).
+    """
+    data = await _get("stock-screener", {
+        "exchange": "TSX",
+        "marketCapMoreThan": min_mktcap,
+        "volumeMoreThan": min_volume,
+        "limit": limit,
+        "country": "CA",
+    })
+
+    if not data or not isinstance(data, list):
+        return []
+
+    results = []
+    for item in data:
+        symbol = item.get("symbol", "")
+        if not symbol:
+            continue
+        # FMP returns TSX tickers as "SU.TO" format already
+        results.append({
+            "ticker": symbol,
+            "name": item.get("companyName"),
+            "sector": item.get("sector"),
+            "exchange": "TSX",
+            "market_cap": item.get("marketCap"),
+            "avg_volume": item.get("volume"),
+            "currency": "CAD",
+        })
+    return results
+
+
+async def get_tsx_gainers(
+    _db: AsyncSession,
+    min_volume: int = 500_000,
+    limit: int = 20,
+) -> list[dict]:
+    """
+    Fetch today's top TSX gainers from FMP.
+    Returns list of {ticker, name, price, change_pct, volume}.
+    Not cached — called daily by momentum-watchlist trigger (1 FMP credit per call).
+    """
+    data = await _get("stock_market/gainers")
+
+    if not data or not isinstance(data, list):
+        return []
+
+    results = []
+    for item in data:
+        symbol = item.get("symbol", "")
+        # Filter to TSX tickers (end with .TO or exchange is TSX)
+        if not symbol.endswith(".TO"):
+            continue
+        volume = item.get("volume") or 0
+        if volume < min_volume:
+            continue
+        results.append({
+            "ticker": symbol,
+            "name": item.get("name"),
+            "price": item.get("price"),
+            "change_pct": item.get("changesPercentage"),
+            "volume": volume,
+            "currency": "CAD",
+            "exchange": "TSX",
+        })
+
+    return results[:limit]
+
+
 async def get_earnings_history(db: AsyncSession, ticker: str, limit: int = 4) -> list[dict]:
     """
     Last N quarters of EPS actuals vs estimates.

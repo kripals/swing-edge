@@ -114,3 +114,6 @@ async def fx_warning_threshold(db: AsyncSession) -> float:
 
 async def us_trade_min_target_pct(db: AsyncSession) -> float:
     return await get_rule(db, "us_trade_min_target_pct", 8.0)
+
+async def max_active_scan_tickers(db: AsyncSession) -> int:
+    return await get_rule(db, "max_active_scan_tickers", 80)

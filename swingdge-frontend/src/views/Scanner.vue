@@ -81,7 +81,7 @@
         <span class="legend-item strong-bar-ex">Strong (70%+)</span>
         <span class="legend-item medium-bar-ex">Medium (50–70%)</span>
         <span class="legend-item weak-bar-ex">Weak (40–50%)</span>
-        <InfoTooltip text="A score out of 9 criteria: uptrend, RSI zone, MACD direction, EMA crossover, Bollinger Band, volume, relative strength vs TSX. 40% minimum to appear here." position="bottom" />
+        <InfoTooltip text="A score out of 12 criteria: uptrend, RSI zone, MACD direction, EMA crossover, Bollinger Band, volume, relative strength vs TSX, sector ETF momentum, 52-week breakout, ADX trend strength, and news sentiment. 40% minimum to appear here." position="bottom" />
       </div>
 
       <div v-if="!loading && filtered.length" class="candidates">
@@ -124,9 +124,18 @@
               :title="`RSI (Relative Strength Index): measures momentum 0–100. Under 30 = oversold/potential buy. Over 70 = overbought. Current: ${fmt(c.rsi_14)}`">
               RSI {{ fmt(c.rsi_14) }}
             </span>
+            <span class="ind-chip" v-if="c.adx_14 != null" :class="c.adx_14 >= 25 ? 'chip-green' : ''"
+              :title="`ADX (Average Directional Index): measures trend strength 0–100. Below 25 = weak/choppy trend. Above 25 = strong directional trend. Current: ${fmt(c.adx_14)}`">
+              ADX {{ fmt(c.adx_14) }}
+            </span>
             <span class="ind-chip" v-if="c.volume_ratio != null"
               :title="`Volume ratio: today's trading volume vs 20-day average. ${fmt(c.volume_ratio)}× means ${fmt(c.volume_ratio)} times the normal volume. Higher = more interest.`">
               Vol {{ fmt(c.volume_ratio) }}x
+            </span>
+            <span class="ind-chip" v-if="c.high_52w != null"
+              :title="`52-week high: $${fmt(c.high_52w)}. Price within 2% of this level with strong volume is a breakout signal.`"
+              :class="c.current_price != null && c.current_price >= c.high_52w * 0.98 ? 'chip-green' : ''">
+              52w ${{ fmt(c.high_52w) }}
             </span>
             <span class="ind-chip" :class="c.above_sma_50 ? 'chip-green' : 'chip-red'"
               :title="c.above_sma_50 ? 'Price is above the 50-day moving average — stock is in an uptrend.' : 'Price is below the 50-day moving average — stock is in a downtrend. Most buy signals require being above this line.'">
@@ -135,6 +144,22 @@
             <span class="ind-chip" v-if="c.relative_strength != null" :class="c.relative_strength > 0 ? 'chip-green' : 'chip-red'"
               :title="`Relative Strength vs TSX Composite over 20 days. Positive means this stock is outperforming the overall market.`">
               RS {{ c.relative_strength > 0 ? '+' : '' }}{{ fmt(c.relative_strength) }}%
+            </span>
+            <span class="ind-chip sentiment-positive" v-if="c.sentiment === 'positive'"
+              title="News sentiment: recent articles are positive on this stock.">
+              ↑ News
+            </span>
+            <span class="ind-chip sentiment-negative" v-else-if="c.sentiment === 'negative'"
+              title="News sentiment: recent articles are negative on this stock.">
+              ↓ News
+            </span>
+            <span class="ind-chip sector-up" v-if="c.sector_etf_positive === true"
+              :title="`Sector momentum: ${c.sector || 'this sector'} ETF is up today — wind is at the stock's back.`">
+              ↑ Sector
+            </span>
+            <span class="ind-chip sector-down" v-else-if="c.sector_etf_positive === false"
+              :title="`Sector momentum: ${c.sector || 'this sector'} ETF is down today — headwind for this trade.`">
+              ↓ Sector
             </span>
             <span class="ind-chip warning-chip" v-if="c.earnings_days_away != null && c.earnings_days_away <= 10"
               :title="`Earnings report in ${c.earnings_days_away} days. Stocks can move 5–20% on earnings — we avoid new trades within 5 days of earnings.`">
@@ -295,6 +320,7 @@ function formatSignal(type) {
     EMA_CROSSOVER: 'EMA Cross',
     BB_BOUNCE: 'BB Bounce',
     VOLUME_BREAKOUT: 'Vol Breakout',
+    BREAKOUT_52W: '52W Breakout',
     COMBO: 'Combo',
   }
   return map[type] || type
@@ -319,6 +345,8 @@ function candidateInsight(c) {
     parts.push(`${c.ticker} is trading near its lower Bollinger Band — statistically oversold. The typical target is a rebound to the midline (~20-day average).`)
   } else if (c.signal_type === 'VOLUME_BREAKOUT') {
     parts.push(`${c.ticker} is breaking out above key moving averages on ${vol ?? '—'}× normal volume — heavy volume breakouts have the highest follow-through rate.`)
+  } else if (c.signal_type === 'BREAKOUT_52W') {
+    parts.push(`${c.ticker} is within 2% of its 52-week high on ${vol ?? '—'}× normal volume — a new high breakout with momentum confirmation. These often continue higher once the old high is cleared.`)
   } else if (c.signal_type === 'COMBO') {
     parts.push(`${c.ticker} fired multiple signals at once — a combo setup has higher historical reliability than a single signal alone.`)
   }
@@ -353,6 +381,7 @@ function signalExplain(type) {
     EMA_CROSSOVER: '9-day EMA crossed above 21-day EMA — short-term trend turned bullish.',
     BB_BOUNCE: 'Price is near or below the lower Bollinger Band — statistically oversold, mean reversion likely.',
     VOLUME_BREAKOUT: 'Price above SMA 50 and 200 on more than 2× normal volume — institutional buying pressure.',
+    BREAKOUT_52W: 'Price within 2% of its 52-week high on 1.5× or more volume — a new high breakout with momentum confirmation.',
     COMBO: 'Two or more signals fired at once — higher conviction setup.',
   }
   return map[type] || type
@@ -366,6 +395,7 @@ function signalClass(type) {
     EMA_CROSSOVER: 'sig-teal',
     BB_BOUNCE: 'sig-yellow',
     VOLUME_BREAKOUT: 'sig-orange',
+    BREAKOUT_52W: 'sig-green',
     COMBO: 'sig-accent',
   }
   return map[type] || 'sig-blue'
@@ -583,6 +613,12 @@ onMounted(() => loadResults())
   border-top: 1px solid var(--border);
   padding-top: 8px;
 }
+
+/* Sentiment & sector alignment badges */
+.sentiment-positive { background: rgba(34,197,94,0.15); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
+.sentiment-negative { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.25); }
+.sector-up   { background: rgba(34,197,94,0.12); color: var(--green); border: 1px solid rgba(34,197,94,0.2); }
+.sector-down { background: rgba(239,68,68,0.12); color: var(--red); border: 1px solid rgba(239,68,68,0.2); }
 
 /* History footer */
 .history-row {

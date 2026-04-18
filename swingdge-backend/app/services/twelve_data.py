@@ -350,6 +350,7 @@ async def get_indicators(
         fetch("macd",    "macd",   {"fast_period": 12, "slow_period": 26, "signal_period": 9}),
         fetch("bbands",  "bbands", {"time_period": 20, "sd": 2}),
         fetch("atr_14",  "atr",    {"time_period": 14}),
+        fetch("adx_14",  "adx",    {"time_period": 14}),
     ]
 
     raw_results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -375,6 +376,8 @@ async def get_indicators(
             indicators["bb_lower"]  = _float(values.get("lower_band"))
         elif name == "atr_14":
             indicators["atr_14"] = _float(values.get("atr"))
+        elif name == "adx_14":
+            indicators["adx_14"] = _float(values.get("adx"))
 
     await cache_svc.cache_set(db, key, indicators, cache_svc.TTL.INDICATORS, provider="twelve_data")
     return indicators

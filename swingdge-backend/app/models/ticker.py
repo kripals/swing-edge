@@ -17,3 +17,6 @@ class Ticker(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)      # False = skip in scanner
     twelve_data_symbol: Mapped[str | None] = mapped_column(String(30))  # e.g. "SU:TSX" or "SU.TO"
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Dynamic universe fields (Phase 7)
+    expires_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    discovery_source: Mapped[str | None] = mapped_column(String(30), nullable=True)  # 'manual' | 'fmp_screener' | 'momentum'

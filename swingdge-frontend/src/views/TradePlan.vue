@@ -83,6 +83,7 @@
             :target1="plan.target_1"
             :target2="plan.target_2"
             :current="plan.current_price"
+            :pivots="plan.pivot_levels"
           />
         </div>
 
@@ -123,6 +124,21 @@
             </span>
             <span class="level-price">${{ fmt(plan.stop_loss) }}</span>
             <span class="level-pct negative">{{ fromEntry(plan.stop_loss) }}%</span>
+          </div>
+        </div>
+
+        <!-- Pivot levels -->
+        <div v-if="plan.pivot_levels" class="pivot-section">
+          <div class="pivot-title">
+            Pivot Points (prev. day)
+            <InfoTooltip text="Classic pivot points calculated from yesterday's high, low, and close. S1/S2 are support levels (potential buy zones), R1/R2 are resistance levels (potential targets or exit zones). P is the central pivot." position="left" />
+          </div>
+          <div class="pivot-row">
+            <span class="pivot-chip pivot-r">R2 ${{ fmt(plan.pivot_levels.r2) }}</span>
+            <span class="pivot-chip pivot-r">R1 ${{ fmt(plan.pivot_levels.r1) }}</span>
+            <span class="pivot-chip pivot-p">P ${{ fmt(plan.pivot_levels.pivot) }}</span>
+            <span class="pivot-chip pivot-s">S1 ${{ fmt(plan.pivot_levels.s1) }}</span>
+            <span class="pivot-chip pivot-s">S2 ${{ fmt(plan.pivot_levels.s2) }}</span>
           </div>
         </div>
       </div>
@@ -292,12 +308,15 @@ import InfoTooltip from '../components/InfoTooltip.vue'
 import { defineComponent, h } from 'vue'
 
 const PriceLadder = defineComponent({
-  props: ['stop', 'entryLow', 'entryHigh', 'target1', 'target2', 'current'],
+  props: ['stop', 'entryLow', 'entryHigh', 'target1', 'target2', 'current', 'pivots'],
   setup(props) {
     return () => {
-      const levels = [props.stop, props.entryLow, props.entryHigh, props.target1, props.target2]
-      const min = Math.min(...levels) * 0.998
-      const max = Math.max(...levels) * 1.002
+      const pivotValues = props.pivots
+        ? [props.pivots.s2, props.pivots.s1, props.pivots.pivot, props.pivots.r1, props.pivots.r2].filter(v => v != null && v > 0)
+        : []
+      const levels = [props.stop, props.entryLow, props.entryHigh, props.target1, props.target2, ...pivotValues]
+      const min = Math.min(...levels) * 0.997
+      const max = Math.max(...levels) * 1.003
       const range = max - min
 
       const toY = (price) => 100 - ((price - min) / range) * 100
@@ -309,13 +328,37 @@ const PriceLadder = defineComponent({
       const sy = toY(props.stop)
       const cy = toY(props.current)
 
+      // Pivot level elements (dashed gray lines, left-side labels)
+      const pivotLines = []
+      if (props.pivots) {
+        const pv = props.pivots
+        const pivotDefs = [
+          { key: 'r2', label: 'R2', color: '#6b7280' },
+          { key: 'r1', label: 'R1', color: '#9ca3af' },
+          { key: 'pivot', label: 'P',  color: '#a78bfa' },
+          { key: 's1', label: 'S1', color: '#9ca3af' },
+          { key: 's2', label: 'S2', color: '#6b7280' },
+        ]
+        for (const { key, label, color } of pivotDefs) {
+          const val = pv[key]
+          if (!val || val <= 0) continue
+          const py = toY(val)
+          pivotLines.push(
+            h('line', { x1: 10, y1: py + '%', x2: 60, y2: py + '%', stroke: color, 'stroke-width': 1, 'stroke-dasharray': '3,2' }),
+            h('text', { x: 8, y: py + '%', fill: color, 'font-size': 7, 'dominant-baseline': 'middle', 'text-anchor': 'end' }, label),
+          )
+        }
+      }
+
       return h('svg', {
         viewBox: '0 0 200 160',
         style: 'width:100%;max-width:280px;display:block;margin:0 auto',
       }, [
-        // Stop → Entry fill (red)
+        // Pivot lines (behind everything)
+        ...pivotLines,
+        // Entry zone fill (blue)
         h('rect', { x: 70, y: ehY + '%', width: 60, height: (elY - ehY) + '%', fill: 'rgba(59,130,246,0.15)', rx: 2 }),
-        // T1 line
+        // T2 line
         h('line', { x1: 60, y1: t2y + '%', x2: 140, y2: t2y + '%', stroke: '#22c55e', 'stroke-width': 2 }),
         h('line', { x1: 60, y1: t1y + '%', x2: 140, y2: t1y + '%', stroke: '#22c55e', 'stroke-width': 1.5, 'stroke-dasharray': '4,2' }),
         // Entry zone
@@ -598,6 +641,15 @@ onMounted(load)
 .level-price { font-weight: 600; min-width: 120px; text-align: right; }
 .level-pct   { min-width: 60px; text-align: right; font-size: 12px; }
 .muted       { color: var(--text-muted); }
+
+/* Pivot levels */
+.pivot-section { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.pivot-title { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+.pivot-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.pivot-chip { font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 600; }
+.pivot-r { background: rgba(239,68,68,0.1); color: #f87171; border: 1px solid rgba(239,68,68,0.2); }
+.pivot-p { background: rgba(168,85,247,0.1); color: #c084fc; border: 1px solid rgba(168,85,247,0.2); }
+.pivot-s { background: rgba(34,197,94,0.1); color: #4ade80; border: 1px solid rgba(34,197,94,0.2); }
 
 /* Metrics grid */
 .metrics-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }

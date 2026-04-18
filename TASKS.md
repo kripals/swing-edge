@@ -189,32 +189,35 @@
 > Goal: improve signal quality by incorporating principles real traders use that the current scorer doesn't cover.
 
 ### 1. Sector Momentum Alignment
-- [ ] In `scanner.py` scoring, cross-reference the stock's sector against the latest sector ETF performance row in `sector_performance` table
-- [ ] Award a score component point if the stock's sector ETF is positive on the week (e.g. Energy stock + XEG up = aligned)
-- [ ] Map sector names to ETF tickers (Energy→XEG, Financials→ZEB, Materials→XGD, etc.) in a constant in `scanner.py`
-- [ ] No new API calls — data already in DB from `sector-update` trigger
+- [x] Map sector names to ETF tickers (`_SECTOR_ETF_MAP` constant in `scanner.py`)
+- [x] Load sector ETF `change_pct` from in-memory cache (populated by `sector-update` trigger) at scan time
+- [x] Award score component point if stock's sector ETF is positive on the day (`scanner.py` `_score()`)
+- [x] Show sector ETF alignment badge on Scanner candidate card in frontend
 
 ### 2. 52-Week High Breakout Signal
-- [ ] Add `BREAKOUT_52W` signal type to `_detect_signals()` in `scanner.py`: price within 2% of 52-week high + volume ratio ≥ 1.5x
-- [ ] Compute 52-week high from the OHLCV candles already fetched (use 252-candle window) — no new API calls
-- [ ] Add `above_52w_high` as a scoring component (replaces or augments the existing volume breakout check)
-- [ ] Surface `52w_high` value on the Scanner candidate card in the frontend
+- [x] Add `BREAKOUT_52W` signal type to `_detect_signals()`: price within 2% of 52-week high + volume ratio ≥ 1.5x
+- [x] Compute 52-week high from 252-candle OHLCV window via `compute_52w_high()` in `indicators.py`
+- [x] Add `above_52w_high` as scoring component in `_score()` (`scanner.py`)
+- [x] Add `high_52w` field to `ScanCandidate`, `ScanResult` model + migration `0005`
+- [x] Surface `52w_high` value on Scanner candidate card in frontend
 
 ### 3. ADX — Trend Strength
-- [ ] Add `adx_14` to the Twelve Data indicators fetch in `twelve_data.py` (`/indicator?indicator=adx`)
-- [ ] Add ADX ≥ 25 as a 10th scoring component in `scanner.py` (strong trend confirmation)
-- [ ] Show ADX value on the Scanner candidate card alongside RSI
+- [x] Add `adx_14` to Twelve Data indicators fetch in `twelve_data.py` (9th API call per ticker)
+- [x] Add ADX ≥ 25 as scoring component in `scanner.py`
+- [x] Add `adx_14` to `ScanCandidate`, `ScanResult` model + migration `0005`
+- [x] Show ADX value on Scanner candidate card alongside RSI in frontend
 
 ### 4. News Sentiment (fill existing placeholder)
-- [ ] Implement Marketaux call in a new `services/news.py` — fetch last 3 articles per ticker, average sentiment score
-- [ ] Replace hardcoded `False` in scoring component 9 (`scanner.py:254`) with the Marketaux sentiment result
-- [ ] Cache results in `api_cache` table with 4-hour TTL to stay within 100 req/day limit
-- [ ] Show a sentiment badge (positive/neutral/negative) on the Scanner candidate card
+- [x] Implement Marketaux call in `services/news.py` — fetch last 3 articles per ticker, average sentiment score
+- [x] Replace hardcoded `False` in scorer with live `sentiment_positive` result (`scanner.py`)
+- [x] Cache results in `api_cache` table with 4-hour TTL to stay within 100 req/day limit
+- [x] Show sentiment badge (positive/neutral/negative) on Scanner candidate card in frontend
 
 ### 5. Pivot Point Entry Refinement
-- [ ] Add `compute_pivot_points()` to `services/indicators.py` — classic pivot formula from previous day OHLCV (P, S1, S2, R1, R2)
-- [ ] In `trade_plan.py`, snap `entry_low` to the nearest support pivot (S1 or S2) if it's within 1% of current price
-- [ ] Show pivot levels on the Trade Plan price ladder SVG in the frontend
+- [x] Add `compute_pivot_points()` to `services/indicators.py` — classic P, S1, S2, R1, R2 from previous day OHLCV
+- [x] In `trade_plan.py`, snap `entry_low` to nearest support pivot (S1 or S2) if within 1% of current price
+- [x] Return `pivot_levels` dict in `TradePlanResult` and `TradePlanPreview` API response
+- [x] Show pivot levels on Trade Plan price ladder SVG in frontend
 
 ### 6. Fix Signal Detection Accuracy (scanner logic bugs)
 - [x] **RSI_REVERSAL**: Added `not above_sma_50` — now a distinct bottoming signal, no longer overlaps with RSI_PULLBACK. (`scanner.py:215`)
@@ -223,10 +226,12 @@
 - [x] **Volume gate**: Moved `min_avg_vol` check outside `volume_ratio is not None` guard. (`scanner.py:154`)
 
 ### 7. Daily Portfolio Snapshot for True Daily P&L
-- [ ] Add a `portfolio-snapshot` trigger that writes today's total portfolio value to `market_snapshots` table once per day at market close
+- [x] Add a `portfolio-snapshot` trigger — writes today's total portfolio value + macro data to `market_snapshots` at 4:15 PM ET (`triggers.py`)
 - [x] In `daily-summary` trigger, rename misleading `daily_change`/`daily_change_pct` → `total_pnl`/`total_pnl_pct` (`triggers.py`)
-- [x] Update `fmt_daily_summary` in `telegram.py` — label changed from "Today" to "Unrealized P&L" (honest since no previous-day snapshots stored yet)
-- [ ] Once `portfolio-snapshot` trigger exists, diff today vs yesterday snapshot and surface true "Today's Change" alongside unrealized P&L
+- [x] Update `fmt_daily_summary` in `telegram.py` — label changed from "Today" to "Unrealized P&L"
+- [x] `daily-summary` now diffs today vs yesterday's snapshot for true daily P&L; falls back to unrealized P&L if no snapshot exists
+- [x] Add `portfolio_value_cad` column to `market_snapshots` model + migration `0004`
+- [x] Add `portfolio-snapshot` to GHA workflow (cron `15 20 * * 1-5`, `workflow_dispatch`)
 
 ---
 
@@ -236,37 +241,36 @@
 
 ### Schema
 
-- [ ] Alembic migration — add `expires_at` (DateTime, nullable) and `discovery_source` (String, nullable — e.g. `"fmp_screener"`, `"momentum"`, `"manual"`) columns to `ticker_universe`
-- [ ] Extend `cache-cleanup` trigger to deactivate expired dynamic tickers (`expires_at < now()` → `is_active=False`)
+- [x] Alembic migration `0006` — add `expires_at` (DateTime, nullable) and `discovery_source` (String(30), nullable) to `ticker_universe`
+- [x] Extend `cache-cleanup` trigger to deactivate expired dynamic tickers (`expires_at < now()` → `is_active=False`)
 
 ### Job 1: `ticker-discovery` (weekly — permanent additions)
 
-- [ ] Add `get_tsx_screener(db, min_mktcap, min_volume, limit)` to `services/fmp.py` — calls FMP `/stock-screener` endpoint (1 FMP credit per run)
-- [ ] Filter screener results: exchange=TSX, market cap > $2B CAD, avg volume > 200k, not already in `ticker_universe`
-- [ ] Upsert new tickers into `ticker_universe` with `is_active=True`, `discovery_source="fmp_screener"`, no `expires_at`
-- [ ] Set `is_active=False` for tickers no longer returned by screener and not manually added (delisted guard)
-- [ ] Build trigger endpoint handler `ticker-discovery` in `triggers.py` — returns count of added/deactivated tickers + Telegram summary
-- [ ] Add `ticker-discovery` to GitHub Actions workflow — run weekly on Sunday at 6:00 AM ET
-- [ ] Add `ticker-discovery` to `workflow_dispatch` options in `market-monitor.yml`
+- [x] Add `get_tsx_screener(_db, min_mktcap, min_volume, limit)` to `services/fmp.py` — calls FMP `/stock-screener` (1 FMP credit per run)
+- [x] Filter screener results: exchange=TSX, market cap > $2B CAD, avg volume > 200k, not already in `ticker_universe`
+- [x] Upsert new tickers into `ticker_universe` with `is_active=True`, `discovery_source="fmp_screener"`, no `expires_at`; deactivate delisted screener tickers
+- [x] Build trigger endpoint handler `ticker-discovery` in `triggers.py` — Telegram summary of added/deactivated count
+- [x] Add `ticker-discovery` to GitHub Actions workflow — weekly Sunday 6:00 AM ET (`0 10 * * 0`)
+- [x] Add `ticker-discovery` to `workflow_dispatch` options in `market-monitor.yml`
 
 ### Job 2: `momentum-watchlist` (daily — temporary hot stocks)
 
-- [ ] Add `get_tsx_gainers(db, min_volume, limit)` to `services/fmp.py` — calls FMP `/stock_market/gainers` (1 FMP credit per run)
-- [ ] Filter to tickers NOT already in `ticker_universe`, volume > 500k
-- [ ] Upsert up to 10 new tickers per day with `is_active=True`, `discovery_source="momentum"`, `expires_at = now() + 7 days`
-- [ ] Build trigger endpoint handler `momentum-watchlist` in `triggers.py`
-- [ ] Add `momentum-watchlist` to GitHub Actions workflow — run daily at 10:30 AM ET (after morning-scan completes)
-- [ ] Add `momentum-watchlist` to `workflow_dispatch` options in `market-monitor.yml`
+- [x] Add `get_tsx_gainers(_db, min_volume, limit)` to `services/fmp.py` — calls FMP `/stock_market/gainers` (1 FMP credit per run)
+- [x] Filter to TSX tickers (`.TO` suffix) NOT already in `ticker_universe`, volume > 500k
+- [x] Upsert up to 10 new tickers per day with `is_active=True`, `discovery_source="momentum"`, `expires_at = now() + 7 days`
+- [x] Build trigger endpoint handler `momentum-watchlist` in `triggers.py`
+- [x] Add `momentum-watchlist` to GitHub Actions workflow — weekdays 10:30 AM ET (`30 14 * * 1-5`)
+- [x] Add `momentum-watchlist` to `workflow_dispatch` options in `market-monitor.yml`
 
 ### Credit Budget Guard
 
-- [ ] Add `max_active_scan_tickers` rule to `trading_rules` table (default: 80) via `scripts/seed.py`
-- [ ] In `scanner.py` `run_scan()`, after fetching active tickers, cap the list at `max_active_scan_tickers` — prioritise manually-added tickers, then sort by `discovery_source` + `created_at`
+- [x] Add `max_active_scan_tickers` rule to `trading_rules` table (default: 80) via `scripts/seed.py` + inserted into Supabase
+- [x] In `scanner.py` `run_scan()`, cap list at `max_active_scan_tickers` — manual first, then fmp_screener, then momentum
 
 ### Testing & Validation
 
-- [ ] Dry-run `ticker-discovery` against local DB — confirm upsert, no duplicates, `twelve_data_symbol` format correct (`:TSX` suffix)
-- [ ] Dry-run `momentum-watchlist` — confirm 7-day expiry, deactivation via cache-cleanup
+- [ ] Dry-run `ticker-discovery` via `workflow_dispatch` — confirm upsert, no duplicates, `:TSX` symbol format correct
+- [ ] Dry-run `momentum-watchlist` via `workflow_dispatch` — confirm 7-day expiry, deactivation via cache-cleanup
 - [ ] Run scanner against expanded universe — confirm no regressions in signal detection or scoring
 - [ ] Confirm credit math stays under 800/day with 80-ticker cap: 80 × 9 = 720 credits
 

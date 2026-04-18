@@ -17,6 +17,7 @@ class MarketSnapshot(Base):
     nat_gas: Mapped[float | None] = mapped_column(Numeric(8, 4))
     copper: Mapped[float | None] = mapped_column(Numeric(8, 4))
     cpi: Mapped[float | None] = mapped_column(Numeric(4, 2))
+    portfolio_value_cad: Mapped[float | None] = mapped_column(Numeric(12, 2))  # total portfolio CAD at close
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

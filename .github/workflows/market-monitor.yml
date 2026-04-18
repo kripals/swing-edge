@@ -15,6 +15,9 @@ on:
     - cron: '0,15,30,45 14-19 * * 1-5'   # price-check
     - cron: '0 20 * * 1-5'               # price-check at 4:00 PM ET
 
+    # 4:15 PM ET → 20:15 UTC
+    - cron: '15 20 * * 1-5'   # portfolio-snapshot (before daily-summary)
+
     # 4:30 PM ET → 20:30 UTC
     - cron: '30 20 * * 1-5'   # sector-update
 
@@ -31,6 +34,12 @@ on:
     # 2:00 AM UTC daily
     - cron: '0 2 * * *'       # cache-cleanup
 
+    # 10:30 AM ET → 14:30 UTC (weekdays, after morning-scan)
+    - cron: '30 14 * * 1-5'   # momentum-watchlist
+
+    # 6:00 AM ET Sunday → 10:00 UTC
+    - cron: '0 10 * * 0'      # ticker-discovery
+
   # Allow manual trigger from GitHub Actions UI
   workflow_dispatch:
     inputs:
@@ -46,7 +55,10 @@ on:
           - earnings-check
           - portfolio-sync
           - sector-update
+          - portfolio-snapshot
           - cache-cleanup
+          - ticker-discovery
+          - momentum-watchlist
 
 jobs:
   # ── Earnings check — 8:00 AM ET weekdays ──────────────────────────────────
@@ -144,6 +156,36 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d text="⚠️ SwingEdge job failed: price-check"
+
+  # ── Portfolio snapshot — 4:15 PM ET ──────────────────────────────────────
+  portfolio-snapshot:
+    if: >
+      github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'portfolio-snapshot' ||
+      github.event_name == 'schedule' && github.event.schedule == '15 20 * * 1-5'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake Render
+        run: |
+          for i in 1 2 3; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${{ secrets.RENDER_API_URL }}/health")
+            [ "$STATUS" = "200" ] && break
+            sleep 20
+          done
+          true
+
+      - name: Trigger portfolio-snapshot
+        run: |
+          curl -s -f --max-time 30 \
+            -X POST "${{ secrets.RENDER_API_URL }}/api/trigger/portfolio-snapshot" \
+            -H "Authorization: Bearer ${{ secrets.TRIGGER_SECRET }}" \
+            -H "Content-Type: application/json"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="⚠️ SwingEdge job failed: portfolio-snapshot"
 
   # ── Sector update — 4:30 PM ET ────────────────────────────────────────────
   sector-update:
@@ -297,3 +339,63 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d text="⚠️ SwingEdge job failed: cache-cleanup"
+
+  # ── Ticker discovery — Sunday 6:00 AM ET ─────────────────────────────────────
+  ticker-discovery:
+    if: >
+      github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'ticker-discovery' ||
+      github.event_name == 'schedule' && github.event.schedule == '0 10 * * 0'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake Render
+        run: |
+          for i in 1 2 3; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${{ secrets.RENDER_API_URL }}/health")
+            [ "$STATUS" = "200" ] && break
+            sleep 20
+          done
+          true
+
+      - name: Trigger ticker-discovery
+        run: |
+          curl -s -f --max-time 30 \
+            -X POST "${{ secrets.RENDER_API_URL }}/api/trigger/ticker-discovery" \
+            -H "Authorization: Bearer ${{ secrets.TRIGGER_SECRET }}" \
+            -H "Content-Type: application/json"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="⚠️ SwingEdge job failed: ticker-discovery"
+
+  # ── Momentum watchlist — 10:30 AM ET weekdays ────────────────────────────────
+  momentum-watchlist:
+    if: >
+      github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'momentum-watchlist' ||
+      github.event_name == 'schedule' && github.event.schedule == '30 14 * * 1-5'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake Render
+        run: |
+          for i in 1 2 3; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${{ secrets.RENDER_API_URL }}/health")
+            [ "$STATUS" = "200" ] && break
+            sleep 20
+          done
+          true
+
+      - name: Trigger momentum-watchlist
+        run: |
+          curl -s -f --max-time 30 \
+            -X POST "${{ secrets.RENDER_API_URL }}/api/trigger/momentum-watchlist" \
+            -H "Authorization: Bearer ${{ secrets.TRIGGER_SECRET }}" \
+            -H "Content-Type: application/json"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="⚠️ SwingEdge job failed: momentum-watchlist"

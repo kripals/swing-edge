@@ -17,7 +17,7 @@ swing-edge/
 
 ## Stack
 - **Backend:** FastAPI, SQLAlchemy (async), Alembic, pydantic-settings
-- **Database:** PostgreSQL — Docker locally, Supabase in production
+- **Database:** PostgreSQL — Supabase only (used for both local dev and production)
 - **Frontend:** Vue 3, Vite, Pinia, Vue Router, Axios, vite-plugin-pwa
 - **Deploy:** Render (backend), Vercel (frontend), GitHub Actions (scheduler)
 - **Notifications:** Telegram bot
@@ -63,9 +63,8 @@ Frontend uses Vite proxy (`/api` → `http://localhost:8000`) — no CORS issues
 - `swingdge-frontend/vite.config.js` — Vite proxy config
 
 ## Database
-- **Local:** Docker PostgreSQL on `localhost:5432` (db: `swingdge`, user: `postgres`, pass: `postgres`)
-- **Production:** Supabase — `DATABASE_URL` in `.env` (commented out locally)
-- **Migrations:** Alembic — `alembic/versions/0001_initial_schema.py` has all 11 tables
+- **Single database:** Supabase — `DATABASE_URL` in `.env` (used for both local dev and production)
+- **Migrations:** Alembic — `alembic/versions/` (currently at 0005)
 - **Seed script:** `scripts/seed.py` — trading rules, 56 tickers, 2 accounts, 14 holdings
 
 ## Auth

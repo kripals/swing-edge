@@ -40,6 +40,8 @@ TRADING_RULES = [
     ("atr_target1_multiplier",    "3.0",   "float", "Target 1 = entry + (ATR * this multiplier)", True),
     ("atr_target2_multiplier",    "4.5",   "float", "Target 2 = entry + (ATR * this multiplier)", True),
     ("entry_zone_buffer_pct",     "1.0",   "float", "Entry zone upper bound = current_price * (1 + this/100)", True),
+    # Dynamic ticker universe (Phase 7)
+    ("max_active_scan_tickers",   "80",    "int",   "Cap scanner universe at this many tickers — 80 × 9 = 720 Twelve Data credits/day (under 800 limit)", False),
 ]
 
 

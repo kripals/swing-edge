@@ -123,13 +123,60 @@ def compute_ema_yesterday(candles: list[dict], period: int) -> float | None:
     return round(ema_series[-1], 4)
 
 
+def compute_pivot_points(candles: list[dict]) -> dict[str, float] | None:
+    """
+    Classic pivot point formula using the previous day's OHLC (candles[1]).
+    candles are newest-first from Twelve Data.
+
+    Returns: {pivot, s1, s2, r1, r2}
+    Returns None if fewer than 2 candles available.
+    """
+    if len(candles) < 2:
+        return None
+
+    prev = candles[1]  # yesterday
+    high = _f(prev["high"])
+    low = _f(prev["low"])
+    close = _f(prev["close"])
+
+    if high == 0 and low == 0 and close == 0:
+        return None
+
+    pivot = (high + low + close) / 3
+    s1 = round(2 * pivot - high, 4)
+    s2 = round(pivot - (high - low), 4)
+    r1 = round(2 * pivot - low, 4)
+    r2 = round(pivot + (high - low), 4)
+
+    return {
+        "pivot": round(pivot, 4),
+        "s1": s1,
+        "s2": s2,
+        "r1": r1,
+        "r2": r2,
+    }
+
+
+def compute_52w_high(candles: list[dict], period: int = 252) -> float | None:
+    """
+    52-week high from the last N daily candles (default 252 trading days ≈ 1 year).
+    Uses the 'high' field of each candle. candles are newest-first from Twelve Data.
+    Returns None if fewer than 20 candles available (not enough history).
+    """
+    window = candles[:period]
+    if len(window) < 20:
+        return None
+    highs = [_f(c["high"]) for c in window]
+    return round(max(highs), 4)
+
+
 def compute_extras(
     candles: list[dict],
     benchmark_candles: list[dict] | None = None,
 ) -> dict[str, float | None]:
     """
-    Compute VWAP, volume_ratio, relative_strength, and previous-day EMA9/EMA21
-    (used for EMA crossover detection — did it *just* cross?).
+    Compute VWAP, volume_ratio, relative_strength, previous-day EMA9/EMA21,
+    and 52-week high (used for breakout signal detection).
     Returns a dict ready to merge into the indicators dict.
     """
     result: dict[str, float | None] = {
@@ -138,6 +185,7 @@ def compute_extras(
         "relative_strength": None,
         "ema_9_yesterday": compute_ema_yesterday(candles, 9),
         "ema_21_yesterday": compute_ema_yesterday(candles, 21),
+        "high_52w": compute_52w_high(candles),
     }
     if benchmark_candles:
         result["relative_strength"] = compute_relative_strength(candles, benchmark_candles)

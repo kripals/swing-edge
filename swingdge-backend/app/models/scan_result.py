@@ -26,6 +26,9 @@ class ScanResult(Base):
     atr_14: Mapped[float | None] = mapped_column(Numeric(10, 4))
     relative_strength: Mapped[float | None] = mapped_column(Numeric(8, 2))
 
+    high_52w: Mapped[float | None] = mapped_column(Numeric(10, 4))
+    adx_14: Mapped[float | None] = mapped_column(Numeric(6, 2))
+
     sector: Mapped[str | None] = mapped_column(String(50))
     notes: Mapped[str | None] = mapped_column(Text)
     has_trade_plan: Mapped[bool] = mapped_column(Boolean, default=False)

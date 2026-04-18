@@ -34,6 +34,21 @@ from app.services import rules as rules_svc
 from app.services import indicators as ind_svc
 from app.services import earnings as earn_svc
 from app.services import twelve_data
+from app.services import cache as cache_svc
+from app.services import news as news_svc
+
+
+# Sector name → ETF ticker mapping for sector momentum alignment
+_SECTOR_ETF_MAP: dict[str, str] = {
+    "Energy":     "XEG.TO",
+    "Financials": "ZEB.TO",
+    "Gold Miners": "XGD.TO",
+    "Materials":  "XGD.TO",   # gold miners / materials share XGD
+    "REITs":      "ZRE.TO",
+    "Technology": "XIT.TO",
+    "Utilities":  "ZUT.TO",
+    "Healthcare": "XHC.TO",
+}
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +68,8 @@ class ScanCandidate:
     above_sma_50: bool
     atr_14: float | None
     relative_strength: float | None
+    high_52w: float | None
+    adx_14: float | None
     earnings_date: date | None
     earnings_days_away: int | None
     notes: str = ""
@@ -69,12 +86,30 @@ async def run_scan(db: AsyncSession) -> list[ScanCandidate]:
     if not tickers:
         return []
 
+    # Credit budget cap — keep Twelve Data usage under 800/day.
+    # Priority: manual tickers first, then fmp_screener, then momentum (most ephemeral).
+    cap = await rules_svc.max_active_scan_tickers(db)
+    if len(tickers) > cap:
+        def _priority(t: Ticker) -> int:
+            src = t.discovery_source or "manual"
+            return {"manual": 0, "fmp_screener": 1, "momentum": 2}.get(src, 1)
+        tickers = sorted(tickers, key=_priority)[:cap]
+        logger.info("Ticker cap applied: scanning %d of universe (cap=%d)", len(tickers), cap)
+
     # Fetch quotes for all tickers in one batch call
     ticker_symbols = [t.ticker for t in tickers]
     quotes = await twelve_data.get_batch_quotes(db, ticker_symbols)
 
     # Pre-fetch benchmark (TSX Composite) candles for relative strength
     benchmark_candles = await _fetch_benchmark(db)
+
+    # Load sector ETF change_pct from cache (populated by sector-update trigger)
+    # {sector_name: change_pct} — used for momentum alignment scoring
+    sector_change: dict[str, float | None] = {}
+    for sector, etf_ticker in _SECTOR_ETF_MAP.items():
+        cached = cache_svc._mem_get(cache_svc.quote_key(etf_ticker))
+        if cached and cached.get("change_pct") is not None:
+            sector_change[sector] = float(cached["change_pct"])
 
     # Fetch rules once (they're cached in-memory by rules_svc)
     min_price = await rules_svc.scanner_min_price(db)
@@ -85,7 +120,7 @@ async def run_scan(db: AsyncSession) -> list[ScanCandidate]:
 
     async def scan_one(t: Ticker) -> ScanCandidate | None:
         async with semaphore:
-            return await _scan_ticker(db, t, quotes, benchmark_candles, min_price, min_avg_vol)
+            return await _scan_ticker(db, t, quotes, benchmark_candles, min_price, min_avg_vol, sector_change)
 
     results = await asyncio.gather(*[scan_one(t) for t in tickers], return_exceptions=True)
 
@@ -112,6 +147,7 @@ async def _scan_ticker(
     benchmark_candles: list[dict],
     min_price: float,
     min_avg_vol: int,
+    sector_change: dict[str, float | None] | None = None,
 ) -> ScanCandidate | None:
     ticker = ticker_row.ticker
 
@@ -146,7 +182,8 @@ async def _scan_ticker(
 
     # ── 5. OHLCV for local extras ─────────────────────────────────────────────
     try:
-        candles = await twelve_data.get_daily_ohlcv(db, ticker, output_size=60)
+        # 252 candles = ~1 trading year — needed for 52w high breakout signal
+        candles = await twelve_data.get_daily_ohlcv(db, ticker, output_size=252)
     except Exception:
         candles = []
 
@@ -167,8 +204,15 @@ async def _scan_ticker(
                      ind.get("macd_histogram") or 0)
         return None
 
-    # ── 8. Scoring ────────────────────────────────────────────────────────────
-    score = _score(price, ind, above_sma_50, volume_ratio)
+    # ── 8. News sentiment (cached 4h — won't burn quota on repeat scans) ────────
+    try:
+        sentiment = await news_svc.get_sentiment(db, ticker)
+        sentiment_positive = sentiment is not None and sentiment.get("label") == "positive"
+    except Exception:
+        sentiment_positive = False
+
+    # ── 9. Scoring ────────────────────────────────────────────────────────────
+    score = _score(price, ind, above_sma_50, volume_ratio, ticker_row.sector, sector_change, sentiment_positive)
     if score < 0.4:
         logger.debug("%s: filtered — score %.2f < 0.4 (signals=%s)", ticker, score, signals)
         return None
@@ -189,6 +233,8 @@ async def _scan_ticker(
         above_sma_50=above_sma_50,
         atr_14=ind.get("atr_14"),
         relative_strength=ind.get("relative_strength"),
+        high_52w=ind.get("high_52w"),
+        adx_14=ind.get("adx_14"),
         earnings_date=earnings_date,
         earnings_days_away=days_away,
     )
@@ -249,22 +295,54 @@ def _detect_signals(price: float, ind: dict, above_sma_50: bool) -> list[str]:
             and sma_200 is not None and price > sma_200):
         signals.append("VOLUME_BREAKOUT")
 
+    # BREAKOUT_52W: price within 2% of 52-week high + volume spike (≥1.5x)
+    high_52w = ind.get("high_52w")
+    if (high_52w is not None and high_52w > 0
+            and price >= high_52w * 0.98
+            and volume_ratio is not None and volume_ratio >= 1.5):
+        signals.append("BREAKOUT_52W")
+
     return signals
+
+
+_SIGNAL_PRIORITY = [
+    "COMBO", "BREAKOUT_52W", "VOLUME_BREAKOUT", "EMA_CROSSOVER",
+    "MACD_CROSSOVER", "RSI_PULLBACK", "BB_BOUNCE", "RSI_REVERSAL",
+]
 
 
 def _pick_signal_type(signals: list[str]) -> str:
     if len(signals) >= 2:
         return "COMBO"
+    # Return highest-priority single signal
+    for s in _SIGNAL_PRIORITY:
+        if s in signals:
+            return s
     return signals[0] if signals else "UNKNOWN"
 
 
 # ── Scoring (architecture v3 section 12) ─────────────────────────────────────
 
-def _score(price: float, ind: dict, above_sma_50: bool, volume_ratio: float | None) -> float:
+def _score(
+    price: float,
+    ind: dict,
+    above_sma_50: bool,
+    volume_ratio: float | None,
+    sector: str | None = None,
+    sector_change: dict[str, float | None] | None = None,
+    sentiment_positive: bool = False,
+) -> float:
     """
-    Each component is 0 or 1. Score = sum / total (9 components).
+    Each component is 0 or 1. Score = sum / total (10 components).
     Must be >= 0.4 to pass.
     """
+    # Sector momentum alignment: stock's sector ETF is positive on the day
+    sector_etf_positive = False
+    if sector and sector_change:
+        etf_chg = sector_change.get(sector)
+        if etf_chg is not None:
+            sector_etf_positive = etf_chg > 0
+
     components = [
         above_sma_50,                                                               # price > SMA 50
         ind.get("sma_200") is not None and price > ind["sma_200"],                  # price > SMA 200
@@ -276,8 +354,14 @@ def _score(price: float, ind: dict, above_sma_50: bool, volume_ratio: float | No
             and (ind["ema_9"] - ind["ema_21"]) / ind["ema_21"] <= 0.02,             # EMA9 freshly above EMA21 (within 2%)
         ind.get("bb_lower") is not None and price <= ind["bb_lower"] * 1.02,        # near BB lower
         ind.get("relative_strength") is not None and ind["relative_strength"] > 0,  # RS > 0
-        # news sentiment — not implemented yet, always False
-        False,
+        sector_etf_positive,                                                        # sector ETF positive on the day
+        # 52w high breakout: price within 2% of 52-week high
+        ind.get("high_52w") is not None and ind["high_52w"] > 0
+            and price >= ind["high_52w"] * 0.98,
+        # ADX ≥ 25: strong trend confirmation
+        ind.get("adx_14") is not None and ind["adx_14"] >= 25,
+        # news sentiment — positive Marketaux score
+        sentiment_positive,
     ]
     return sum(1 for c in components if c) / len(components)
 

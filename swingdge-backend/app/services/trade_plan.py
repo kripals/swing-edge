@@ -61,7 +61,8 @@ class TradePlanResult:
     earnings_days_away: int | None
     signal_type: str | None
     signal_score: float | None
-    violations: list[str]   # empty = valid trade
+    pivot_levels: dict | None   # {pivot, s1, s2, r1, r2} from previous day OHLC
+    violations: list[str]       # empty = valid trade
 
 
 # ── Main generator ────────────────────────────────────────────────────────────
@@ -98,9 +99,20 @@ async def generate(
     exchange = ticker_row.exchange if ticker_row else ("NYSE" if _is_us(ticker) else "TSX")
     sector = ticker_row.sector if ticker_row else None
 
+    # ── Pivot points (classic formula from previous day OHLC) ────────────────
+    pivots = ind_svc.compute_pivot_points(candles)
+
     # ── Entry zone ────────────────────────────────────────────────────────────
     entry_low = round(price * 0.995, 4)
     entry_high = round(price * 1.005, 4)
+
+    # Snap entry_low to nearest support pivot (S1 or S2) if within 1% of price
+    if pivots:
+        for support in (pivots["s1"], pivots["s2"]):
+            if support > 0 and abs(support - price) / price <= 0.01:
+                entry_low = round(min(entry_low, support), 4)
+                break
+
     entry_mid = round((entry_low + entry_high) / 2, 4)
 
     # ── Stop loss ─────────────────────────────────────────────────────────────
@@ -168,6 +180,7 @@ async def generate(
         earnings_days_away=days_away,
         signal_type=signal_type,
         signal_score=signal_score,
+        pivot_levels=pivots,
         violations=violations,
     )
 
