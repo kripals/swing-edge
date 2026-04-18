@@ -61,37 +61,47 @@
         <div v-else-if="advisorError" class="advisor-error">{{ advisorError }}</div>
 
         <div v-else-if="advisorResults.length" class="advisor-rows">
-          <!-- SELL rows -->
-          <template v-for="r in advisorResults" :key="r.ticker">
-            <div v-if="r.action === 'SELL'" class="advisor-row row-sell">
-              <div class="row-left">
-                <span class="action-chip chip-sell">SELL</span>
-                <span class="row-ticker">{{ r.ticker }}</span>
-                <span class="row-account">{{ r.account_name }}</span>
-              </div>
-              <div class="row-right">
-                <span class="row-pnl" :class="r.fx_adjusted_pnl_pct >= 0 ? 'pos' : 'neg'">
-                  {{ r.fx_adjusted_pnl_pct > 0 ? '+' : '' }}{{ r.fx_adjusted_pnl_pct.toFixed(1) }}%
-                  <span v-if="r.has_fx_cost" class="fx-note">FX-adj</span>
-                </span>
-                <span v-if="r.earnings_days_away != null && r.earnings_days_away <= 5" class="earn-warn">⚡ Earn {{ r.earnings_days_away }}d</span>
-              </div>
-              <div class="row-reason">{{ r.reason }}</div>
-            </div>
-          </template>
 
-          <!-- WATCH rows -->
-          <template v-for="r in advisorResults" :key="r.ticker + '-w'">
-            <div v-if="r.action === 'WATCH'" class="advisor-row row-watch">
-              <div class="row-left">
-                <span class="action-chip chip-watch">WATCH</span>
-                <span class="row-ticker">{{ r.ticker }}</span>
-                <span class="row-account">{{ r.account_name }}</span>
+          <!-- SELL + WATCH rows (always visible) -->
+          <template v-for="r in advisorResults.filter(r => r.action === 'SELL' || r.action === 'WATCH')" :key="r.ticker">
+            <div class="advisor-row" :class="rowClass(r.action)">
+              <div class="row-top">
+                <div class="row-left">
+                  <span class="action-chip" :class="chipClass(r.action)">{{ r.action }}</span>
+                  <div class="row-id">
+                    <span class="row-ticker">{{ r.ticker }}</span>
+                    <span class="row-account">{{ r.account_name }}</span>
+                  </div>
+                </div>
+                <div class="row-right">
+                  <div class="pnl-stack">
+                    <span class="row-pnl" :class="r.fx_adjusted_pnl_pct >= 0 ? 'pos' : 'neg'">
+                      {{ r.fx_adjusted_pnl_pct > 0 ? '+' : '' }}{{ r.fx_adjusted_pnl_pct.toFixed(1) }}%
+                    </span>
+                    <span v-if="r.has_fx_cost" class="pnl-raw">({{ r.unrealized_pnl_pct > 0 ? '+' : '' }}{{ r.unrealized_pnl_pct.toFixed(1) }}% raw)</span>
+                  </div>
+                  <span v-if="r.earnings_days_away != null && r.earnings_days_away <= 5" class="earn-warn">⚡ Earn {{ r.earnings_days_away }}d</span>
+                </div>
               </div>
-              <div class="row-right">
-                <span class="row-pnl" :class="r.fx_adjusted_pnl_pct >= 0 ? 'pos' : 'neg'">
-                  {{ r.fx_adjusted_pnl_pct > 0 ? '+' : '' }}{{ r.fx_adjusted_pnl_pct.toFixed(1) }}%
-                  <span v-if="r.has_fx_cost" class="fx-note">FX-adj</span>
+              <div class="row-stats">
+                <span v-if="r.current_price != null" class="stat-pill">
+                  ${{ r.current_price.toFixed(2) }} <span class="stat-label">price</span>
+                </span>
+                <span v-if="r.rsi_14 != null" class="stat-pill" :class="rsiClass(r.rsi_14)">
+                  RSI {{ r.rsi_14.toFixed(0) }}
+                </span>
+                <span v-if="r.above_sma_50 != null" class="stat-pill" :class="r.above_sma_50 ? 'pill-pos' : 'pill-neg'">
+                  {{ r.above_sma_50 ? '▲' : '▼' }} SMA-50
+                  <span v-if="r.sma_50 != null" class="stat-label">${{ r.sma_50.toFixed(2) }}</span>
+                </span>
+                <span v-if="r.macd_histogram != null" class="stat-pill" :class="r.macd_histogram >= 0 ? 'pill-pos' : 'pill-neg'">
+                  MACD {{ r.macd_histogram >= 0 ? '↑' : '↓' }}
+                </span>
+                <span v-if="r.adx_14 != null" class="stat-pill" :class="r.adx_14 >= 25 ? 'pill-neutral-strong' : 'pill-neutral'">
+                  ADX {{ r.adx_14.toFixed(0) }}
+                </span>
+                <span v-if="r.volume_ratio != null" class="stat-pill" :class="r.volume_ratio >= 1.5 ? 'pill-pos' : r.volume_ratio < 0.7 ? 'pill-neg' : 'pill-neutral'">
+                  Vol {{ r.volume_ratio.toFixed(1) }}x
                 </span>
               </div>
               <div class="row-reason">{{ r.reason }}</div>
@@ -105,14 +115,33 @@
             </button>
             <template v-if="holdExpanded">
               <div v-for="r in advisorResults.filter(r => r.action === 'HOLD')" :key="r.ticker + '-h'" class="advisor-row row-hold">
-                <div class="row-left">
-                  <span class="action-chip chip-hold">HOLD</span>
-                  <span class="row-ticker">{{ r.ticker }}</span>
-                  <span class="row-account">{{ r.account_name }}</span>
+                <div class="row-top">
+                  <div class="row-left">
+                    <span class="action-chip chip-hold">HOLD</span>
+                    <div class="row-id">
+                      <span class="row-ticker">{{ r.ticker }}</span>
+                      <span class="row-account">{{ r.account_name }}</span>
+                    </div>
+                  </div>
+                  <div class="row-right">
+                    <span class="row-pnl" :class="r.fx_adjusted_pnl_pct >= 0 ? 'pos' : 'neg'">
+                      {{ r.fx_adjusted_pnl_pct > 0 ? '+' : '' }}{{ r.fx_adjusted_pnl_pct.toFixed(1) }}%
+                      <span v-if="r.has_fx_cost" class="fx-note">FX-adj</span>
+                    </span>
+                  </div>
                 </div>
-                <div class="row-right">
-                  <span class="row-pnl" :class="r.fx_adjusted_pnl_pct >= 0 ? 'pos' : 'neg'">
-                    {{ r.fx_adjusted_pnl_pct > 0 ? '+' : '' }}{{ r.fx_adjusted_pnl_pct.toFixed(1) }}%
+                <div class="row-stats">
+                  <span v-if="r.current_price != null" class="stat-pill">
+                    ${{ r.current_price.toFixed(2) }} <span class="stat-label">price</span>
+                  </span>
+                  <span v-if="r.rsi_14 != null" class="stat-pill" :class="rsiClass(r.rsi_14)">
+                    RSI {{ r.rsi_14.toFixed(0) }}
+                  </span>
+                  <span v-if="r.above_sma_50 != null" class="stat-pill" :class="r.above_sma_50 ? 'pill-pos' : 'pill-neg'">
+                    {{ r.above_sma_50 ? '▲' : '▼' }} SMA-50
+                  </span>
+                  <span v-if="r.volume_ratio != null" class="stat-pill" :class="r.volume_ratio >= 1.5 ? 'pill-pos' : r.volume_ratio < 0.7 ? 'pill-neg' : 'pill-neutral'">
+                    Vol {{ r.volume_ratio.toFixed(1) }}x
                   </span>
                 </div>
                 <div class="row-reason">{{ r.reason }}</div>
@@ -121,16 +150,31 @@
           </div>
 
           <!-- Leveraged ETF rows -->
-          <template v-for="r in advisorResults" :key="r.ticker + '-l'">
-            <div v-if="r.action === 'LEVERAGED_ETF'" class="advisor-row row-leveraged">
-              <div class="row-left">
-                <span class="action-chip chip-leveraged">⚠️ ETF</span>
-                <span class="row-ticker">{{ r.ticker }}</span>
-                <span class="row-account">{{ r.account_name }}</span>
+          <template v-for="r in advisorResults.filter(r => r.action === 'LEVERAGED_ETF')" :key="r.ticker + '-l'">
+            <div class="advisor-row row-leveraged">
+              <div class="row-top">
+                <div class="row-left">
+                  <span class="action-chip chip-leveraged">ETF</span>
+                  <div class="row-id">
+                    <span class="row-ticker">{{ r.ticker }}</span>
+                    <span class="row-account">{{ r.account_name }}</span>
+                  </div>
+                </div>
+                <div class="row-right">
+                  <span class="row-pnl" :class="r.unrealized_pnl_pct >= 0 ? 'pos' : 'neg'">
+                    {{ r.unrealized_pnl_pct > 0 ? '+' : '' }}{{ r.unrealized_pnl_pct.toFixed(1) }}%
+                  </span>
+                </div>
               </div>
-              <div class="row-right">
-                <span class="row-pnl" :class="r.unrealized_pnl_pct >= 0 ? 'pos' : 'neg'">
-                  {{ r.unrealized_pnl_pct > 0 ? '+' : '' }}{{ r.unrealized_pnl_pct.toFixed(1) }}%
+              <div class="row-stats">
+                <span v-if="r.current_price != null" class="stat-pill">
+                  ${{ r.current_price.toFixed(2) }} <span class="stat-label">price</span>
+                </span>
+                <span v-if="r.rsi_14 != null" class="stat-pill" :class="rsiClass(r.rsi_14)">
+                  RSI {{ r.rsi_14.toFixed(0) }}
+                </span>
+                <span v-if="r.volume_ratio != null" class="stat-pill" :class="r.volume_ratio >= 1.5 ? 'pill-pos' : r.volume_ratio < 0.7 ? 'pill-neg' : 'pill-neutral'">
+                  Vol {{ r.volume_ratio.toFixed(1) }}x
                 </span>
               </div>
               <div class="row-reason">{{ r.reason }}</div>
@@ -179,6 +223,20 @@ async function fetchAdvisor() {
   } finally {
     advisorLoading.value = false
   }
+}
+
+function rowClass(action) {
+  return { 'row-sell': action === 'SELL', 'row-watch': action === 'WATCH', 'row-hold': action === 'HOLD', 'row-leveraged': action === 'LEVERAGED_ETF' }
+}
+
+function chipClass(action) {
+  return { 'chip-sell': action === 'SELL', 'chip-watch': action === 'WATCH', 'chip-hold': action === 'HOLD', 'chip-leveraged': action === 'LEVERAGED_ETF' }
+}
+
+function rsiClass(rsi) {
+  if (rsi > 70) return 'pill-neg'
+  if (rsi < 30) return 'pill-pos'
+  return 'pill-neutral'
 }
 
 function fmtTime(iso) {
@@ -295,40 +353,81 @@ function formatFlag(flag) {
 .advisor-rows { display: flex; flex-direction: column; gap: 6px; }
 
 .advisor-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  grid-template-rows: auto auto;
-  gap: 2px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   padding: 10px 12px;
   border-radius: 8px;
   border-left: 3px solid transparent;
 }
-.row-sell   { background: rgba(239,68,68,0.07);  border-left-color: #ef4444; }
-.row-watch  { background: rgba(234,179,8,0.07);  border-left-color: #eab308; }
-.row-hold   { background: rgba(34,197,94,0.05);  border-left-color: #22c55e; }
+.row-sell      { background: rgba(239,68,68,0.07);   border-left-color: #ef4444; }
+.row-watch     { background: rgba(234,179,8,0.07);   border-left-color: #eab308; }
+.row-hold      { background: rgba(34,197,94,0.05);   border-left-color: #22c55e; }
 .row-leveraged { background: rgba(107,114,128,0.07); border-left-color: #6b7280; }
 
+.row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
 .row-left {
   display: flex;
   align-items: center;
   gap: 8px;
-  grid-column: 1;
-  grid-row: 1;
+}
+.row-id {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 .row-right {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  grid-column: 2;
-  grid-row: 1;
-  justify-content: flex-end;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 2px;
+  text-align: right;
+}
+.pnl-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+.pnl-raw {
+  font-size: 10px;
+  color: var(--text-muted);
 }
 .row-reason {
   font-size: 12px;
   color: var(--text-muted);
-  grid-column: 1 / -1;
-  grid-row: 2;
 }
+
+/* ── Stat pills ──────────────────────────────────────────────────────────── */
+.row-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.stat-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: rgba(255,255,255,0.06);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.stat-label {
+  font-weight: 400;
+  opacity: 0.7;
+}
+.pill-pos     { background: rgba(34,197,94,0.15);  color: #22c55e; }
+.pill-neg     { background: rgba(239,68,68,0.15);  color: #ef4444; }
+.pill-neutral { background: rgba(255,255,255,0.06); color: var(--text-muted); }
+.pill-neutral-strong { background: rgba(99,102,241,0.15); color: #818cf8; }
 
 .action-chip {
   font-size: 10px;

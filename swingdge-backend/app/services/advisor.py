@@ -43,9 +43,15 @@ class AdvisorResult:
     unrealized_pnl_pct: float       # raw (before FX adjustment)
     fx_adjusted_pnl_pct: float      # after 3% round-trip deduction for US holdings
     current_price: float | None
+    avg_cost: float                 # cost basis per share
+    shares: float                   # position size
     rsi_14: float | None
+    sma_50: float | None            # SMA-50 price level
     above_sma_50: bool | None
+    macd_histogram: float | None    # positive = bullish, negative = bearish
+    adx_14: float | None            # trend strength (>25 = trending)
     volume_ratio: float | None
+    atr_14: float | None            # average true range (volatility)
     is_leveraged_etf: bool
     has_fx_cost: bool
     currency: str
@@ -122,6 +128,9 @@ async def analyze_holdings(db: AsyncSession) -> list[AdvisorResult]:
         sma_50 = indics.get("sma_50")
         above_sma_50 = (live_price > float(sma_50)) if sma_50 and live_price else None
         volume_ratio = extras.get("volume_ratio")
+        macd_histogram = indics.get("macd_histogram")
+        adx_14 = indics.get("adx_14")
+        atr_14 = indics.get("atr_14")
 
         # Compute raw P&L %
         avg_cost = float(row.avg_cost)
@@ -183,9 +192,15 @@ async def analyze_holdings(db: AsyncSession) -> list[AdvisorResult]:
             unrealized_pnl_pct=round(raw_pnl_pct, 2),
             fx_adjusted_pnl_pct=round(adj_pnl_pct, 2),
             current_price=live_price,
+            avg_cost=avg_cost,
+            shares=float(row.shares),
             rsi_14=float(rsi) if rsi is not None else None,
+            sma_50=float(sma_50) if sma_50 is not None else None,
             above_sma_50=above_sma_50,
+            macd_histogram=float(macd_histogram) if macd_histogram is not None else None,
+            adx_14=float(adx_14) if adx_14 is not None else None,
             volume_ratio=float(volume_ratio) if volume_ratio is not None else None,
+            atr_14=float(atr_14) if atr_14 is not None else None,
             is_leveraged_etf=is_leveraged,
             has_fx_cost=has_fx,
             currency=row.currency,

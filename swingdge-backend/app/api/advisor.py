@@ -25,9 +25,15 @@ class AdvisorResultSchema(BaseModel):
     unrealized_pnl_pct: float
     fx_adjusted_pnl_pct: float
     current_price: float | None
+    avg_cost: float
+    shares: float
     rsi_14: float | None
+    sma_50: float | None
     above_sma_50: bool | None
+    macd_histogram: float | None
+    adx_14: float | None
     volume_ratio: float | None
+    atr_14: float | None
     is_leveraged_etf: bool
     has_fx_cost: bool
     currency: str
@@ -60,9 +66,15 @@ async def get_advisor_results(db: AsyncSession = Depends(get_db)) -> AdvisorResp
                 unrealized_pnl_pct=r.unrealized_pnl_pct,
                 fx_adjusted_pnl_pct=r.fx_adjusted_pnl_pct,
                 current_price=r.current_price,
+                avg_cost=r.avg_cost,
+                shares=r.shares,
                 rsi_14=r.rsi_14,
+                sma_50=r.sma_50,
                 above_sma_50=r.above_sma_50,
+                macd_histogram=r.macd_histogram,
+                adx_14=r.adx_14,
                 volume_ratio=r.volume_ratio,
+                atr_14=r.atr_14,
                 is_leveraged_etf=r.is_leveraged_etf,
                 has_fx_cost=r.has_fx_cost,
                 currency=r.currency,
