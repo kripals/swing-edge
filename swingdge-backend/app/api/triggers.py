@@ -726,31 +726,47 @@ async def trigger_momentum_watchlist(
 
 # ── portfolio-advisor ─────────────────────────────────────────────────────────
 
+async def _portfolio_advisor_bg() -> None:
+    """
+    Background task: analyze holdings and send Telegram advice with its own DB session.
+    Runs as background task so the HTTP response returns immediately (analysis can take 30-60s).
+    """
+    from app.services import advisor as advisor_svc
+    from app.services import telegram as tg
+
+    logger.info("portfolio-advisor background task started")
+    try:
+        async with AsyncSessionLocal() as db:
+            results = await advisor_svc.analyze_holdings(db)
+            if not results:
+                logger.info("portfolio-advisor: no holdings to analyze")
+                return
+
+            message = tg.fmt_portfolio_advice(results)
+            await tg.send_alert(db, "portfolio_advice", message, priority="medium")
+
+            sell_count = sum(1 for r in results if r.action == "SELL")
+            watch_count = sum(1 for r in results if r.action == "WATCH")
+            hold_count = sum(1 for r in results if r.action == "HOLD")
+            logger.info("portfolio-advisor done: %d SELL, %d WATCH, %d HOLD", sell_count, watch_count, hold_count)
+    except Exception:
+        logger.exception("portfolio-advisor background task failed")
+
+
 @router.post("/portfolio-advisor")
 async def trigger_portfolio_advisor(
+    background_tasks: BackgroundTasks,
     authorization: str | None = Header(default=None),
-    db: AsyncSession = Depends(get_db),
-) -> TriggerResult:
+) -> dict:
     """
     Daily job (4:00 PM ET): analyze all holdings and send HOLD/WATCH/SELL recommendations via Telegram.
-    Runs before daily-summary (4:45 PM ET) so advice is fresh when the summary arrives.
+    Returns immediately — analysis runs as a background task (can take 30-60s on cold cache).
     """
     verify_trigger_secret(authorization)
-
-    async def _job():
-        from app.services import advisor as advisor_svc
-        from app.services import telegram as tg
-
-        results = await advisor_svc.analyze_holdings(db)
-        if not results:
-            return "No holdings to analyze"
-
-        message = tg.fmt_portfolio_advice(results)
-        await tg.send_alert(db, "portfolio_advice", message, priority="medium")
-
-        sell_count = sum(1 for r in results if r.action == "SELL")
-        watch_count = sum(1 for r in results if r.action == "WATCH")
-        hold_count = sum(1 for r in results if r.action == "HOLD")
-        return f"Portfolio advice sent: {sell_count} SELL, {watch_count} WATCH, {hold_count} HOLD"
-
-    return await _run_timed("portfolio-advisor", _job())
+    background_tasks.add_task(_portfolio_advisor_bg)
+    return {
+        "job": "portfolio-advisor",
+        "status": "started",
+        "message": "Advisor running in background — check Telegram for results",
+        "triggered_at": datetime.now(timezone.utc).isoformat(),
+    }

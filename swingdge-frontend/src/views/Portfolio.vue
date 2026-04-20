@@ -58,7 +58,10 @@
         </div>
 
         <div v-if="advisorLoading" class="advisor-loading">Analyzing holdings…</div>
-        <div v-else-if="advisorError" class="advisor-error">{{ advisorError }}</div>
+        <div v-else-if="advisorError" class="advisor-error">
+          {{ advisorError }}
+          <button @click="fetchAdvisor" class="retry-btn">Retry</button>
+        </div>
 
         <div v-else-if="advisorResults.length" class="advisor-rows">
 
@@ -127,10 +130,12 @@
                     </div>
                   </div>
                   <div class="row-right">
-                    <span class="row-pnl" :class="r.fx_adjusted_pnl_pct >= 0 ? 'pos' : 'neg'">
-                      {{ r.fx_adjusted_pnl_pct > 0 ? '+' : '' }}{{ r.fx_adjusted_pnl_pct.toFixed(1) }}%
-                      <span v-if="r.has_fx_cost" class="fx-note">FX-adj</span>
-                    </span>
+                    <div class="pnl-stack">
+                      <span class="row-pnl" :class="r.fx_adjusted_pnl_pct >= 0 ? 'pos' : 'neg'">
+                        {{ r.fx_adjusted_pnl_pct > 0 ? '+' : '' }}{{ r.fx_adjusted_pnl_pct.toFixed(1) }}%
+                      </span>
+                      <span v-if="r.has_fx_cost" class="pnl-raw">({{ r.unrealized_pnl_pct > 0 ? '+' : '' }}{{ r.unrealized_pnl_pct.toFixed(1) }}% raw)</span>
+                    </div>
                   </div>
                 </div>
                 <div class="row-stats">
@@ -142,15 +147,22 @@
                   </span>
                   <span v-if="r.above_sma_50 != null" class="stat-pill" :class="r.above_sma_50 ? 'pill-pos' : 'pill-neg'">
                     {{ r.above_sma_50 ? '▲' : '▼' }} SMA-50
+                    <span v-if="r.sma_50 != null" class="stat-label">${{ r.sma_50.toFixed(2) }}</span>
+                  </span>
+                  <span v-if="r.macd_histogram != null" class="stat-pill" :class="r.macd_histogram >= 0 ? 'pill-pos' : 'pill-neg'">
+                    MACD {{ r.macd_histogram >= 0 ? '↑' : '↓' }}
+                  </span>
+                  <span v-if="r.adx_14 != null" class="stat-pill" :class="r.adx_14 >= 25 ? 'pill-neutral-strong' : 'pill-neutral'">
+                    ADX {{ r.adx_14.toFixed(0) }}
                   </span>
                   <span v-if="r.volume_ratio != null" class="stat-pill" :class="r.volume_ratio >= 1.5 ? 'pill-pos' : r.volume_ratio < 0.7 ? 'pill-neg' : 'pill-neutral'">
                     Vol {{ r.volume_ratio.toFixed(1) }}x
                   </span>
                 </div>
                 <div class="row-reason">
-                <span class="reason-simple">{{ r.simple_reason }}</span>
-                <span class="reason-technical">{{ r.reason }}</span>
-              </div>
+                  <span class="reason-simple">{{ r.simple_reason }}</span>
+                  <span class="reason-technical">{{ r.reason }}</span>
+                </div>
               </div>
             </template>
           </div>
@@ -357,7 +369,16 @@ function formatFlag(flag) {
   text-align: center;
   padding: 16px 0;
 }
-.advisor-error { color: #ef4444; }
+.advisor-error { color: #ef4444; display: flex; align-items: center; gap: 10px; justify-content: center; }
+.retry-btn {
+  background: none;
+  border: 1px solid #ef4444;
+  color: #ef4444;
+  padding: 3px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+}
 
 .advisor-rows { display: flex; flex-direction: column; gap: 6px; }
 
