@@ -342,7 +342,44 @@
 
 ---
 
-## Phase 9 — SaaS Prep (Future / Optional)
+## Phase 9 — AI Stock Chat Advisor
+
+> Goal: conversational AI powered by Claude that knows your portfolio, holdings data, advisor recommendations, and live technicals. Ask it anything — "should I sell NKE?", "study my whole portfolio", "find me something to buy today" — and get a response grounded in your real data.
+
+### Backend
+
+- [ ] Sign up for Anthropic API → `console.anthropic.com` → Billing → API Keys
+  - Add `ANTHROPIC_API_KEY=sk-ant-...` to `swingdge-backend/.env`
+  - Add `ANTHROPIC_API_KEY` as a Render environment variable
+  - `anthropic>=0.40.0` already added to `requirements.txt` ✓
+
+- [x] Add `anthropic_api_key: str = ""` to `Settings` class in `app/config.py`
+- [x] Create `app/models/chat_history.py` — SQLAlchemy model (imported in `models/__init__.py`)
+- [x] Add `chat_history` table via Alembic migration `0007` — apply with `alembic upgrade head`
+- [x] Create `services/stock_chat.py` — context builder + Claude API caller (rate-limited, max_tokens=800, haiku model)
+- [x] Create `app/api/chat.py` — `POST /api/chat/stock` (JWT auth, `@limiter.limit("10/minute")`, 503 on missing key) + `GET /api/chat/history`
+- [x] Register chat router in `main.py`
+- [x] Move limiter to `app/utils/limiter.py` (shared module so chat.py can import it)
+
+### Frontend
+
+- [x] Create `src/views/Chat.vue` — chat UI with message bubbles, quick-action chips, typing indicator, optimistic updates, error handling
+- [x] Add `/chat` route to `src/router/index.js` (auth required)
+- [x] Add "AI Chat" nav link to `src/App.vue`
+
+### Testing & Validation
+
+- [ ] Test `build_portfolio_context()` with seeded holdings — confirm all 14 holdings included, FX cost shown, advisor actions populated
+- [ ] Test `build_ticker_context()` for NKE — confirm indicators, earnings, news sentiment, and fundamentals all present
+- [ ] Test `POST /api/chat/stock` with message "Should I sell NKE?" — confirm response references real P&L and RSI
+- [ ] Test portfolio-level question "Study my whole portfolio" — confirm all SELL/WATCH holdings are mentioned
+- [ ] Confirm `chat_history` table persists messages across page refreshes
+- [ ] Verify Claude API costs stay reasonable (< $0.01 per message with Haiku model)
+- [ ] Test graceful degradation when `ANTHROPIC_API_KEY` is missing — confirm 503 or clear error message
+
+---
+
+## Phase 10 — SaaS Prep (Future / Optional)
 
 - [ ] Upgrade Render → Railway Hobby ($5/mo) for always-on + APScheduler
 - [ ] Multi-user auth (Supabase Auth or Clerk)

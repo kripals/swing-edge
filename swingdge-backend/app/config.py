@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     fmp_key: str = ""
     marketaux_key: str = ""
 
+    # ── AI Chat (Phase 9) ─────────────────────────────────────────────────────
+    anthropic_api_key: str = ""
+
     # ── Telegram ──────────────────────────────────────────────────────────────
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""

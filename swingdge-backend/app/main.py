@@ -6,12 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
+from app.utils.limiter import limiter
 
 from app.config import get_settings
-from app.api import auth, portfolio, triggers, scanner, trades, market, alerts, snaptrade, advisor
+from app.api import auth, portfolio, triggers, scanner, trades, market, alerts, snaptrade, advisor, chat
 from app.api import settings as settings_api
 
 settings = get_settings()
@@ -27,8 +27,6 @@ async def lifespan(app: FastAPI):
 
 
 # ── App factory ───────────────────────────────────────────────────────────────
-
-limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(
     title="SwingEdge API",
@@ -88,6 +86,7 @@ app.include_router(market.router)
 app.include_router(alerts.router)
 app.include_router(snaptrade.router)
 app.include_router(advisor.router)
+app.include_router(chat.router)
 
 
 # ── Health check (no auth — used by Render + GitHub Actions) ─────────────────

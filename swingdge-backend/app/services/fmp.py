@@ -11,6 +11,7 @@ FMP docs: https://financialmodelingprep.com/developer/docs
 """
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import httpx
@@ -20,6 +21,7 @@ from app.config import get_settings
 from app.services import cache as cache_svc
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 _BASE = "https://financialmodelingprep.com/api/v3"
 _TIMEOUT = 10.0
@@ -185,37 +187,50 @@ async def get_tsx_screener(
     limit: int = 100,
 ) -> list[dict]:
     """
-    Fetch TSX-listed stocks from FMP stock screener.
-    Returns list of {ticker, name, sector, exchange, market_cap, avg_volume, currency}.
-    Not cached — called weekly by ticker-discovery trigger (1 FMP credit per call).
+    Fetch TSX-listed stocks via yfinance EquityQuery screener.
+    Filters: exchange=TOR, market cap > $2B, avg 3-month volume > 200K.
+    No API key required. Called weekly by ticker-discovery trigger.
     """
-    data = await _get("stock-screener", {
-        "exchange": "TSX",
-        "marketCapMoreThan": min_mktcap,
-        "volumeMoreThan": min_volume,
-        "limit": limit,
-        "country": "CA",
-    })
+    import asyncio
 
-    if not data or not isinstance(data, list):
-        return []
+    def _fetch() -> list[dict]:
+        import yfinance as yf
+        from yfinance import EquityQuery
 
-    results = []
-    for item in data:
-        symbol = item.get("symbol", "")
-        if not symbol:
-            continue
-        # FMP returns TSX tickers as "SU.TO" format already
-        results.append({
-            "ticker": symbol,
-            "name": item.get("companyName"),
-            "sector": item.get("sector"),
-            "exchange": "TSX",
-            "market_cap": item.get("marketCap"),
-            "avg_volume": item.get("volume"),
-            "currency": "CAD",
-        })
-    return results
+        try:
+            q = EquityQuery("and", [
+                EquityQuery("eq", ["exchange", "TOR"]),
+                EquityQuery("gt", ["intradaymarketcap", min_mktcap]),
+            ])
+            result = yf.screen(q, sortField="intradaymarketcap", sortAsc=False, count=200)
+            quotes = result.get("quotes", []) if isinstance(result, dict) else []
+        except Exception as e:
+            logger.warning("yfinance TSX screener failed: %s", e)
+            return []
+
+        results = []
+        for item in quotes:
+            symbol = item.get("symbol", "")
+            if not symbol.endswith(".TO"):
+                continue
+            volume = item.get("averageDailyVolume3Month") or item.get("regularMarketVolume") or 0
+            if volume < min_volume:
+                continue
+            results.append({
+                "ticker": symbol,
+                "name": item.get("shortName") or item.get("longName"),
+                "sector": item.get("sector"),
+                "exchange": "TSX",
+                "market_cap": item.get("marketCap") or 0,
+                "avg_volume": volume,
+                "currency": "CAD",
+            })
+            if len(results) >= limit:
+                break
+
+        return results
+
+    return await asyncio.get_event_loop().run_in_executor(None, _fetch)
 
 
 async def get_tsx_gainers(
@@ -224,35 +239,50 @@ async def get_tsx_gainers(
     limit: int = 20,
 ) -> list[dict]:
     """
-    Fetch today's top TSX gainers from FMP.
-    Returns list of {ticker, name, price, change_pct, volume}.
-    Not cached — called daily by momentum-watchlist trigger (1 FMP credit per call).
+    Fetch today's top TSX gainers via yfinance EquityQuery screener.
+    Filters: exchange=TOR, price change > 2%, volume > 500K.
+    No API key required. Called daily by momentum-watchlist trigger.
     """
-    data = await _get("stock_market/gainers")
+    import asyncio
 
-    if not data or not isinstance(data, list):
-        return []
+    def _fetch() -> list[dict]:
+        import yfinance as yf
+        from yfinance import EquityQuery
 
-    results = []
-    for item in data:
-        symbol = item.get("symbol", "")
-        # Filter to TSX tickers (end with .TO or exchange is TSX)
-        if not symbol.endswith(".TO"):
-            continue
-        volume = item.get("volume") or 0
-        if volume < min_volume:
-            continue
-        results.append({
-            "ticker": symbol,
-            "name": item.get("name"),
-            "price": item.get("price"),
-            "change_pct": item.get("changesPercentage"),
-            "volume": volume,
-            "currency": "CAD",
-            "exchange": "TSX",
-        })
+        try:
+            q = EquityQuery("and", [
+                EquityQuery("eq", ["exchange", "TOR"]),
+                EquityQuery("gt", ["percentchange", 2]),
+            ])
+            result = yf.screen(q, sortField="percentchange", sortAsc=False, count=100)
+            quotes = result.get("quotes", []) if isinstance(result, dict) else []
+        except Exception as e:
+            logger.warning("yfinance TSX gainers failed: %s", e)
+            return []
 
-    return results[:limit]
+        results = []
+        for item in quotes:
+            symbol = item.get("symbol", "")
+            if not symbol.endswith(".TO"):
+                continue
+            volume = item.get("regularMarketVolume") or 0
+            if volume < min_volume:
+                continue
+            results.append({
+                "ticker": symbol,
+                "name": item.get("shortName") or item.get("longName"),
+                "price": item.get("regularMarketPrice"),
+                "change_pct": item.get("regularMarketChangePercent"),
+                "volume": volume,
+                "currency": "CAD",
+                "exchange": "TSX",
+            })
+            if len(results) >= limit:
+                break
+
+        return results
+
+    return await asyncio.get_event_loop().run_in_executor(None, _fetch)
 
 
 async def get_earnings_history(db: AsyncSession, ticker: str, limit: int = 4) -> list[dict]:

@@ -9,6 +9,7 @@ from app.models.cache import ApiCache
 from app.models.trading_rule import TradingRule
 from app.models.ticker import Ticker
 from app.models.scan_result import ScanResult
+from app.models.chat_history import ChatHistory
 
 __all__ = [
     "Account",
@@ -23,4 +24,5 @@ __all__ = [
     "TradingRule",
     "Ticker",
     "ScanResult",
+    "ChatHistory",
 ]

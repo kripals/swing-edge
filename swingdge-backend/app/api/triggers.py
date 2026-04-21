@@ -452,19 +452,43 @@ async def trigger_earnings_check(
 
 # ── portfolio-sync ────────────────────────────────────────────────────────────
 
+async def _portfolio_sync_bg() -> None:
+    """
+    Background task: runs SnapTrade sync with its own DB session.
+    Returns immediately so GHA curl doesn't timeout waiting for SnapTrade API.
+    Skips gracefully if SnapTrade credentials are not configured.
+    """
+    from app.config import get_settings
+    _settings = get_settings()
+    if not _settings.snaptrade_user_id or not _settings.snaptrade_user_secret_encrypted:
+        logger.info("portfolio-sync: SnapTrade not configured — skipping")
+        return
+
+    try:
+        async with AsyncSessionLocal() as db:
+            from app.services import snaptrade
+            result = await snaptrade.sync_portfolio(db)
+            logger.info(
+                "portfolio-sync: synced %d accounts, %d positions",
+                result["accounts_updated"], result["positions_updated"]
+            )
+    except Exception:
+        logger.exception("portfolio-sync background task failed")
+
+
 @router.post("/portfolio-sync")
 async def trigger_portfolio_sync(
+    background_tasks: BackgroundTasks,
     authorization: str | None = Header(default=None),
-    db: AsyncSession = Depends(get_db),
 ) -> TriggerResult:
     verify_trigger_secret(authorization)
-
-    async def _job():
-        from app.services import snaptrade
-        result = await snaptrade.sync_portfolio(db)
-        return f"Synced {result['accounts_updated']} accounts, {result['positions_updated']} positions"
-
-    return await _run_timed("portfolio-sync", _job())
+    background_tasks.add_task(_portfolio_sync_bg)
+    return TriggerResult(
+        job="portfolio-sync",
+        status="started",
+        message="SnapTrade sync running in background",
+        triggered_at=datetime.now(timezone.utc).isoformat(),
+    )
 
 
 # ── sector-update ─────────────────────────────────────────────────────────────

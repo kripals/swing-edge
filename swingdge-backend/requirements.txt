@@ -33,3 +33,9 @@ snaptrade-python-sdk==11.0.72
 
 # Encryption (SnapTrade user secret)
 cryptography>=42.0.5,<43.0.0
+
+# Yahoo Finance (ticker discovery + momentum watchlist — free, no API key)
+yfinance==0.2.54
+
+# AI Chat (Phase 9)
+anthropic>=0.40.0

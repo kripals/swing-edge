@@ -88,3 +88,9 @@ export const alertsApi = {
 export const advisorApi = {
   getResults: () => api.get('/advisor/results'),
 }
+
+// ── AI Chat (Phase 9) ─────────────────────────────────────────────────────────
+export const chatApi = {
+  send: (message, ticker = null) => api.post('/chat/stock', { message, ticker }),
+  getHistory: () => api.get('/chat/history'),
+}

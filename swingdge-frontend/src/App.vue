@@ -10,6 +10,7 @@
         <router-link to="/market">Market</router-link>
         <router-link to="/history">History</router-link>
         <router-link to="/alerts">Alerts</router-link>
+        <router-link to="/chat">AI Chat</router-link>
         <router-link to="/settings">Settings</router-link>
       </div>
     </nav>
