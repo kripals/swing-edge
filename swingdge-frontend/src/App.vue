@@ -121,10 +121,12 @@ body {
 
 main {
   padding: 16px;
+  min-height: 100vh;
 }
 
 main.with-nav {
   padding-top: 68px;
+  min-height: calc(100vh - 52px);
 }
 
 /* Card */
